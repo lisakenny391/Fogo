@@ -130,31 +130,22 @@ export function ClaimInterface({
   };
 
   const getEligibilityBadge = () => {
-    switch (eligibilityStatus) {
-      case "eligible":
-        return (
-          <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Eligible
-          </Badge>
-        );
-      case "ineligible":
-        return (
-          <Badge variant="destructive">
-            <XCircle className="h-3 w-3 mr-1" />
-            Not Eligible
-          </Badge>
-        );
-      case "cooldown":
-        return (
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400">
-            <Clock className="h-3 w-3 mr-1" />
-            Cooldown
-          </Badge>
-        );
-      default:
-        return null;
+    if (eligibilityStatus === "eligible") {
+      return (
+        <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Eligible
+        </Badge>
+      );
+    } else if (eligibilityStatus === "ineligible" || eligibilityStatus === "cooldown") {
+      return (
+        <Badge variant="destructive">
+          <XCircle className="h-3 w-3 mr-1" />
+          Not Eligible
+        </Badge>
+      );
     }
+    return null;
   };
 
   return (
@@ -172,23 +163,7 @@ export function ClaimInterface({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {eligibilityData && (
-          <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Transaction Count:</span>
-                <div className="font-mono font-bold">{eligibilityData.txnCount}</div>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Claim Amount:</span>
-                <div className="font-mono font-bold text-primary">{eligibilityData.proposedAmount} FOGO</div>
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Amount based on wallet transaction history
-            </div>
-          </div>
-        )}
+{/* Removed detailed eligibility information as requested by user */}
 
         {!isConnected && (
           <div className="p-3 bg-muted rounded-lg flex items-center gap-2 text-sm">
@@ -214,26 +189,10 @@ export function ClaimInterface({
           </Button>
         )}
 
-        {eligibilityStatus === "ineligible" && (
-          <div className="space-y-2">
-            <Button disabled className="w-full">
-              Not Eligible
-            </Button>
-            <p className="text-xs text-red-600 dark:text-red-400">
-              You are not eligible to claim tokens at this time.
-            </p>
-          </div>
-        )}
-
-        {eligibilityStatus === "cooldown" && (
-          <div className="space-y-2">
-            <Button disabled className="w-full">
-              Cooldown Active
-            </Button>
-            <p className="text-xs text-yellow-600 dark:text-yellow-400">
-              Last claim: {lastClaimTime}. Please wait 24 hours between claims.
-            </p>
-          </div>
+        {(eligibilityStatus === "ineligible" || eligibilityStatus === "cooldown") && (
+          <Button disabled className="w-full">
+            Not Eligible
+          </Button>
         )}
 
       </CardContent>

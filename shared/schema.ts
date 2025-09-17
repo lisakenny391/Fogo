@@ -17,6 +17,7 @@ export const claims = pgTable("claims", {
   amount: decimal("amount", { precision: 18, scale: 8 }).notNull(), // Support crypto decimals
   transactionHash: text("transaction_hash"),
   status: text("status", { enum: ["pending", "success", "failed"] }).notNull().default("pending"),
+  ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -40,6 +41,16 @@ export const rateLimits = pgTable("rate_limits", {
   resetDate: timestamp("reset_date").notNull(),
 });
 
+// Wallet eligibility table for cooldowns and tracking
+export const walletEligibility = pgTable("wallet_eligibility", {
+  walletAddress: text("wallet_address").primaryKey(),
+  isEligible: boolean("is_eligible").notNull().default(true),
+  lastClaimAt: timestamp("last_claim_at"),
+  transactionCount: integer("transaction_count").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Create insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -51,6 +62,7 @@ export const insertClaimSchema = createInsertSchema(claims).pick({
   amount: true,
   transactionHash: true,
   status: true,
+  ipAddress: true,
 });
 
 export const insertFaucetConfigSchema = createInsertSchema(faucetConfig).pick({
@@ -65,6 +77,13 @@ export const insertRateLimitSchema = createInsertSchema(rateLimits).pick({
   resetDate: true,
 });
 
+export const insertWalletEligibilitySchema = createInsertSchema(walletEligibility).pick({
+  walletAddress: true,
+  isEligible: true,
+  lastClaimAt: true,
+  transactionCount: true,
+});
+
 // Type exports
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -74,3 +93,5 @@ export type InsertFaucetConfig = z.infer<typeof insertFaucetConfigSchema>;
 export type FaucetConfig = typeof faucetConfig.$inferSelect;
 export type InsertRateLimit = z.infer<typeof insertRateLimitSchema>;
 export type RateLimit = typeof rateLimits.$inferSelect;
+export type InsertWalletEligibility = z.infer<typeof insertWalletEligibilitySchema>;
+export type WalletEligibility = typeof walletEligibility.$inferSelect;

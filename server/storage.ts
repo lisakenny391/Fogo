@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Claim, type InsertClaim, type FaucetConfig, type InsertFaucetConfig, type RateLimit, type InsertRateLimit } from "@shared/schema";
+import { type User, type InsertUser, type Claim, type InsertClaim, type FaucetConfig, type InsertFaucetConfig, type RateLimit, type InsertRateLimit, type WalletEligibility, type InsertWalletEligibility } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 // Storage interface for faucet operations
@@ -27,6 +27,10 @@ export interface IStorage {
   updateFaucetConfig(config: Partial<InsertFaucetConfig>): Promise<FaucetConfig | undefined>;
   adjustFaucetBalance(delta: number): Promise<{ success: boolean; newBalance?: string; error?: string }>;
   
+  // Wallet eligibility operations
+  getWalletEligibility(walletAddress: string): Promise<WalletEligibility | undefined>;
+  upsertWalletEligibility(eligibility: InsertWalletEligibility): Promise<WalletEligibility>;
+  
   // Analytics
   getTotalClaims(): Promise<number>;
   getTotalUsers(): Promise<number>;
@@ -40,12 +44,14 @@ export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private claims: Map<string, Claim>;
   private rateLimits: Map<string, RateLimit>;
+  private walletEligibilities: Map<string, WalletEligibility>;
   private faucetConfig: FaucetConfig | undefined;
 
   constructor() {
     this.users = new Map();
     this.claims = new Map();
     this.rateLimits = new Map();
+    this.walletEligibilities = new Map();
     // Initialize default faucet config
     this.faucetConfig = {
       id: randomUUID(),
@@ -83,6 +89,7 @@ export class MemStorage implements IStorage {
       id,
       status: insertClaim.status || "pending",
       transactionHash: insertClaim.transactionHash || null,
+      ipAddress: insertClaim.ipAddress || null,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -145,6 +152,7 @@ export class MemStorage implements IStorage {
       id,
       status: insertClaim.status || "pending",
       transactionHash: insertClaim.transactionHash || null,
+      ipAddress: insertClaim.ipAddress || null,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -232,6 +240,28 @@ export class MemStorage implements IStorage {
     };
 
     return { success: true, newBalance: newBalance.toFixed(8) };
+  }
+
+  // Wallet eligibility operations
+  async getWalletEligibility(walletAddress: string): Promise<WalletEligibility | undefined> {
+    return this.walletEligibilities.get(walletAddress.toLowerCase());
+  }
+
+  async upsertWalletEligibility(insertEligibility: InsertWalletEligibility): Promise<WalletEligibility> {
+    const walletAddress = insertEligibility.walletAddress.toLowerCase();
+    const existing = this.walletEligibilities.get(walletAddress);
+    
+    const eligibility: WalletEligibility = {
+      walletAddress,
+      isEligible: insertEligibility.isEligible ?? true,
+      lastClaimAt: insertEligibility.lastClaimAt || existing?.lastClaimAt || null,
+      transactionCount: insertEligibility.transactionCount ?? 0,
+      createdAt: existing?.createdAt || new Date(),
+      updatedAt: new Date()
+    };
+    
+    this.walletEligibilities.set(walletAddress, eligibility);
+    return eligibility;
   }
 
   // Analytics

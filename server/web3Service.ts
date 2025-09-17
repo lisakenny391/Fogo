@@ -93,7 +93,11 @@ export class Web3Service {
     }
   }
 
-  async sendTokens(toAddress: string, amount: string): Promise<string> {
+  async getWalletTransactionCount(walletAddress: string): Promise<number> {
+    return this.getTransactionCount(walletAddress);
+  }
+
+  async sendTokens(toAddress: string, amount: string, contractAddress?: string): Promise<string> {
     try {
       this.initialize();
       
