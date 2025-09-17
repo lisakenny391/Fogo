@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertClaimSchema, insertRateLimitSchema } from "@shared/schema";
 import { z } from "zod";
 import { createHash } from "crypto";
+import { web3Service } from "./web3Service";
 
 // Helper functions for Fogo testnet faucet
 const simulateTxCount = (address: string): number => {
@@ -20,18 +21,33 @@ const computeProposedAmount = (txCount: number): string => {
   return "0.1";
 };
 
-const getWalletFaucetBalance = async (address: string): Promise<number> => {
-  const total = await storage.getWalletTotalDistributed(address);
-  return parseFloat(total);
+const getRealWalletBalance = async (address: string): Promise<number> => {
+  try {
+    const balance = await web3Service.getWalletBalance(address);
+    return parseFloat(balance);
+  } catch (error) {
+    console.error("Failed to get real wallet balance - RPC unavailable:", error);
+    // Security: Don't allow claims if we can't verify blockchain balance
+    throw new Error("Unable to verify wallet balance - blockchain RPC unavailable");
+  }
 };
 
-// Validation schemas
+const getRealTransactionCount = async (address: string): Promise<number> => {
+  try {
+    return await web3Service.getTransactionCount(address);
+  } catch (error) {
+    console.error("Failed to get real transaction count, using simulation:", error);
+    return simulateTxCount(address);
+  }
+};
+
+// Validation schemas - Using Ethereum/EVM format since we're using ethers.js
 const checkEligibilitySchema = z.object({
-  walletAddress: z.string().regex(/^fogo1[0-9a-z]{20,60}$/i, "Invalid Fogo address format"),
+  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address format"),
 });
 
 const claimTokensSchema = z.object({
-  walletAddress: z.string().regex(/^fogo1[0-9a-z]{20,60}$/i, "Invalid Fogo address format"),
+  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address format"),
 });
 
 // Enhanced eligibility helper with Fogo rules
@@ -43,12 +59,12 @@ const isEligibleForClaim = async (walletAddress: string): Promise<{
   proposedAmount: string; 
   balanceExceeded: boolean; 
 }> => {
-  // Get transaction count and proposed amount
-  const txnCount = simulateTxCount(walletAddress);
+  // Get real transaction count and proposed amount
+  const txnCount = await getRealTransactionCount(walletAddress);
   const proposedAmount = computeProposedAmount(txnCount);
   
-  // Check wallet balance (10 FOGO maximum)
-  const walletBalance = await getWalletFaucetBalance(walletAddress);
+  // Check real wallet balance (10 FOGO maximum)
+  const walletBalance = await getRealWalletBalance(walletAddress);
   const balanceExceeded = walletBalance > 10;
   
   if (balanceExceeded) {
@@ -110,6 +126,15 @@ const isEligibleForClaim = async (walletAddress: string): Promise<{
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Perform blockchain health check on startup
+  console.log("Performing blockchain connectivity check...");
+  const healthCheck = await web3Service.healthCheck();
+  if (!healthCheck.isReady) {
+    console.error("❌ Blockchain connectivity failed:", healthCheck.error);
+    console.warn("⚠️ Faucet will operate with limited functionality - claims will fail");
+  } else {
+    console.log("✅ Blockchain connection established successfully");
+  }
   // Faucet status endpoint
   app.get("/api/faucet/status", async (req, res) => {
     try {
@@ -122,8 +147,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const totalUsers = await storage.getTotalUsers();
       const totalDistributed = await storage.getTotalDistributed();
       
+      // Try to get real faucet balance from blockchain, fallback to config
+      let faucetBalance = config.balance;
+      try {
+        const realBalance = await web3Service.getFaucetBalance();
+        faucetBalance = realBalance;
+        console.log(`Real faucet balance: ${realBalance} FOGO`);
+      } catch (error) {
+        console.warn("Failed to get real faucet balance, using config:", error);
+      }
+      
       res.json({
-        balance: config.balance,
+        balance: faucetBalance,
         dailyLimit: config.dailyLimit,
         isActive: config.isActive,
         lastRefill: config.lastRefill,
@@ -202,15 +237,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const claim = claimResult.claim!;
       
-      // Simulate blockchain transaction (in real app, this would use ethers.js)
+      // Process real blockchain transaction
       setTimeout(async () => {
         let balanceAdjusted = false;
         let rateLimitSnapshot: any = null;
         let rateLimitUpdated = false;
+        let transactionHash: string | null = null;
         
         try {
-          // Mock transaction hash
-          const mockTxHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+          // Send real blockchain transaction
+          transactionHash = await web3Service.sendTokens(walletAddress, amount);
+          console.log(`Real blockchain transaction sent: ${transactionHash}`);
           
           // Step 1: Atomically adjust faucet balance (negative delta to deduct)
           const balanceResult = await storage.adjustFaucetBalance(-requestedAmount);
@@ -242,9 +279,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           rateLimitUpdated = true;
           
           // Step 3: Mark claim as successful (final step)
-          await storage.updateClaimStatus(claim.id, "success", mockTxHash);
+          await storage.updateClaimStatus(claim.id, "success", transactionHash);
           
-          console.log(`Claim ${claim.id} completed successfully with tx: ${mockTxHash}`);
+          console.log(`Claim ${claim.id} completed successfully with blockchain tx: ${transactionHash}`);
         } catch (error) {
           console.error(`Failed to complete claim ${claim.id}:`, error);
           
