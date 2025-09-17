@@ -1,8 +1,18 @@
-import { ethers } from "ethers";
+import { 
+  Connection, 
+  PublicKey, 
+  Keypair, 
+  LAMPORTS_PER_SOL, 
+  SystemProgram, 
+  Transaction,
+  sendAndConfirmTransaction 
+} from "@solana/web3.js";
+import bs58 from "bs58";
+import { createHash } from "crypto";
 
 export class Web3Service {
-  private provider!: ethers.JsonRpcProvider;
-  private wallet!: ethers.Wallet;
+  private connection!: Connection;
+  private wallet!: Keypair;
   private isInitialized: boolean = false;
 
   constructor() {
@@ -12,31 +22,59 @@ export class Web3Service {
   private initialize() {
     if (this.isInitialized) return;
 
-    const rpcUrl = process.env.FOGO_RPC_URL;
-    const privateKey = process.env.PRIVATE_KEY;
+    const rpcUrl = process.env.SOLANA_RPC_URL || process.env.FOGO_RPC_URL || "https://api.devnet.solana.com";
+    const privateKeyBase58 = process.env.PRIVATE_KEY;
 
-    if (!rpcUrl || !privateKey) {
-      throw new Error("FOGO_RPC_URL and PRIVATE_KEY must be set in environment variables");
+    if (!privateKeyBase58) {
+      throw new Error("PRIVATE_KEY must be set in environment variables (base58 encoded Solana private key)");
     }
 
     try {
-      this.provider = new ethers.JsonRpcProvider(rpcUrl);
-      this.wallet = new ethers.Wallet(privateKey, this.provider);
+      this.connection = new Connection(rpcUrl, 'confirmed');
+      
+      // Parse private key to Keypair
+      const secretKeyArray = this.parsePrivateKey(privateKeyBase58);
+      this.wallet = Keypair.fromSecretKey(secretKeyArray);
+      
       this.isInitialized = true;
-      console.log("Web3Service initialized with Fogo RPC");
+      console.log("Web3Service initialized with Solana RPC:", rpcUrl);
+      console.log("Faucet address:", this.wallet.publicKey.toString());
     } catch (error) {
       console.error("Failed to initialize Web3Service:", error);
       throw error;
     }
   }
 
+  private parsePrivateKey(privateKey: string): Uint8Array {
+    try {
+      // Try to parse as JSON array first (common format)
+      const parsedArray = JSON.parse(privateKey);
+      if (Array.isArray(parsedArray) && parsedArray.length === 64) {
+        return new Uint8Array(parsedArray);
+      }
+      throw new Error("Not a valid JSON array");
+    } catch {
+      // Try to decode as base58 string
+      try {
+        const decoded = bs58.decode(privateKey);
+        if (decoded.length !== 64) {
+          throw new Error(`Invalid private key length: expected 64 bytes, got ${decoded.length}`);
+        }
+        return decoded;
+      } catch (error) {
+        throw new Error("Invalid private key format. Expected base58 string or JSON array of 64 numbers");
+      }
+    }
+  }
+
   async getWalletBalance(walletAddress: string): Promise<string> {
     try {
       this.initialize();
-      const balance = await this.provider.getBalance(walletAddress);
-      // Convert from wei to FOGO (assuming 18 decimals like ETH)
-      const fogoBalance = ethers.formatEther(balance);
-      return fogoBalance;
+      const publicKey = new PublicKey(walletAddress);
+      const balance = await this.connection.getBalance(publicKey);
+      // Convert from lamports to SOL
+      const solBalance = (balance / LAMPORTS_PER_SOL).toString();
+      return solBalance;
     } catch (error: any) {
       console.error("Error getting wallet balance:", error);
       throw new Error(`Failed to get wallet balance: ${error.message}`);
@@ -46,9 +84,9 @@ export class Web3Service {
   async getFaucetBalance(): Promise<string> {
     try {
       this.initialize();
-      const balance = await this.provider.getBalance(this.wallet.address);
-      const fogoBalance = ethers.formatEther(balance);
-      return fogoBalance;
+      const balance = await this.connection.getBalance(this.wallet.publicKey);
+      const solBalance = (balance / LAMPORTS_PER_SOL).toString();
+      return solBalance;
     } catch (error: any) {
       console.error("Error getting faucet balance:", error);
       throw new Error(`Failed to get faucet balance: ${error.message}`);
@@ -59,35 +97,44 @@ export class Web3Service {
     try {
       this.initialize();
       
-      // Convert FOGO amount to wei (assuming 18 decimals)
-      const amountInWei = ethers.parseEther(amount);
+      // Convert amount to lamports with proper precision
+      const amountFloat = parseFloat(amount);
+      if (isNaN(amountFloat) || amountFloat < 0) {
+        throw new Error(`Invalid amount: ${amount}`);
+      }
+      const amountInLamports = Math.round(amountFloat * LAMPORTS_PER_SOL);
       
       // Validate address format
-      if (!ethers.isAddress(toAddress)) {
+      let recipientPublicKey: PublicKey;
+      try {
+        recipientPublicKey = new PublicKey(toAddress);
+      } catch (error) {
         throw new Error(`Invalid recipient address: ${toAddress}`);
       }
       
-      // Create transaction (let ethers estimate gas)
-      const tx = {
-        to: toAddress,
-        value: amountInWei,
-      };
+      // Get recent blockhash and create transaction
+      const { blockhash } = await this.connection.getLatestBlockhash();
+      const transaction = new Transaction({
+        recentBlockhash: blockhash,
+        feePayer: this.wallet.publicKey
+      }).add(
+        SystemProgram.transfer({
+          fromPubkey: this.wallet.publicKey,
+          toPubkey: recipientPublicKey,
+          lamports: amountInLamports,
+        })
+      );
 
       // Send transaction
-      console.log(`Sending ${amount} FOGO to ${toAddress}`);
-      const transaction = await this.wallet.sendTransaction(tx);
+      console.log(`Sending ${amount} SOL to ${toAddress}`);
+      const signature = await sendAndConfirmTransaction(
+        this.connection,
+        transaction,
+        [this.wallet]
+      );
       
-      console.log(`Transaction sent: ${transaction.hash}`);
-      
-      // Wait for confirmation
-      const receipt = await transaction.wait();
-      
-      if (receipt?.status === 1) {
-        console.log(`Transaction confirmed: ${transaction.hash}`);
-        return transaction.hash;
-      } else {
-        throw new Error("Transaction failed");
-      }
+      console.log(`Transaction confirmed: ${signature}`);
+      return signature;
     } catch (error: any) {
       console.error("Error sending tokens:", error);
       throw new Error(`Failed to send tokens: ${error.message}`);
@@ -97,8 +144,11 @@ export class Web3Service {
   async getTransactionCount(walletAddress: string): Promise<number> {
     try {
       this.initialize();
-      const txCount = await this.provider.getTransactionCount(walletAddress);
-      return txCount;
+      const publicKey = new PublicKey(walletAddress);
+      
+      // Get recent transaction signatures for this wallet
+      const signatures = await this.connection.getSignaturesForAddress(publicKey, { limit: 1000 });
+      return signatures.length;
     } catch (error: any) {
       console.error("Error getting transaction count:", error);
       // Fallback to simulated count if RPC fails
@@ -109,15 +159,14 @@ export class Web3Service {
 
   private simulateTxCount(address: string): number {
     // Deterministic hash of address mapped to [0..1500]
-    const crypto = require('crypto');
-    const hash = crypto.createHash('sha256').update(address.toLowerCase()).digest('hex');
+    const hash = createHash('sha256').update(address.toLowerCase()).digest('hex');
     const num = parseInt(hash.substring(0, 8), 16);
     return num % 1501; // 0 to 1500
   }
 
   getFaucetAddress(): string {
     this.initialize();
-    return this.wallet.address;
+    return this.wallet.publicKey.toString();
   }
 
   async healthCheck(): Promise<{ isReady: boolean; error?: string }> {
@@ -125,13 +174,13 @@ export class Web3Service {
       this.initialize();
       
       // Test RPC connection
-      await this.provider.getBlockNumber();
+      await this.connection.getSlot();
       
-      // Test wallet can sign
-      const faucetAddress = this.wallet.address;
-      await this.provider.getBalance(faucetAddress);
+      // Test wallet can sign by getting balance
+      const faucetAddress = this.wallet.publicKey;
+      await this.connection.getBalance(faucetAddress);
       
-      console.log(`Web3Service health check passed. Faucet address: ${faucetAddress}`);
+      console.log(`Web3Service health check passed. Faucet address: ${faucetAddress.toString()}`);
       return { isReady: true };
     } catch (error: any) {
       console.error("Web3Service health check failed:", error);
