@@ -134,7 +134,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (requestedAmount > dailyLimit) {
         return res.status(400).json({ 
-          error: `Amount exceeds daily limit of ${config.dailyLimit} STT` 
+          error: `Amount exceeds daily limit of ${config.dailyLimit} FOGO` 
         });
       }
       

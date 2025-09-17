@@ -134,12 +134,12 @@ export function ClaimInterface({
           {eligibilityStatus !== "idle" && getEligibilityBadge()}
         </CardTitle>
         <CardDescription>
-          Claim your daily STT tokens for testing on Somnia testnet
+          Claim your daily FOGO tokens for testing on Fogo testnet faucet
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="claim-amount">Amount (STT)</Label>
+          <Label htmlFor="claim-amount">Amount (FOGO)</Label>
           <Input
             id="claim-amount"
             type="number"
@@ -152,7 +152,7 @@ export function ClaimInterface({
             disabled={!isConnected}
           />
           <p className="text-xs text-muted-foreground">
-            Maximum: 100 STT per day
+            Maximum: 100 FOGO per day
           </p>
         </div>
 
@@ -181,7 +181,7 @@ export function ClaimInterface({
             className="w-full"
             data-testid="button-claim-tokens"
           >
-            {claimMutation.isPending ? "Claiming..." : `Claim ${claimAmount} STT`}
+            {claimMutation.isPending ? "Claiming..." : `Claim ${claimAmount} FOGO`}
           </Button>
         )}
 

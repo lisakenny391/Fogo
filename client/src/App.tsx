@@ -26,9 +26,9 @@ function FaucetPage({
     <div className="container mx-auto px-4 py-8 space-y-8">
       {/* Hero Section */}
       <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold">STT Token Faucet</h1>
+        <h1 className="text-4xl font-bold">FOGO Token Faucet</h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Get free STT testnet tokens for development on the Somnia blockchain. 
+          Get free FOGO testnet tokens for development on the Fogo testnet faucet. 
           Fast, secure, and reliable token distribution.
         </p>
       </div>
@@ -76,7 +76,7 @@ function AnalyticsPage() {
       <div className="space-y-4">
         <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
         <p className="text-muted-foreground">
-          Comprehensive analytics and insights for the STT faucet
+          Comprehensive analytics and insights for the FOGO faucet
         </p>
       </div>
 

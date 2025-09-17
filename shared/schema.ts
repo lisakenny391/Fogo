@@ -24,8 +24,8 @@ export const claims = pgTable("claims", {
 // Faucet configuration and status
 export const faucetConfig = pgTable("faucet_config", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  balance: decimal("balance", { precision: 18, scale: 8 }).notNull().default("1000000"), // 1M STT
-  dailyLimit: decimal("daily_limit", { precision: 18, scale: 8 }).notNull().default("100"), // 100 STT per day
+  balance: decimal("balance", { precision: 18, scale: 8 }).notNull().default("1000000"), // 1M FOGO
+  dailyLimit: decimal("daily_limit", { precision: 18, scale: 8 }).notNull().default("100"), // 100 FOGO per day
   isActive: boolean("is_active").notNull().default(true),
   lastRefill: timestamp("last_refill").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

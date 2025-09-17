@@ -64,11 +64,11 @@ export function StatsDashboard(props: StatsDashboardProps) {
   const formatTokenAmount = (amount: string) => {
     const num = parseFloat(amount);
     if (num >= 1000000) {
-      return `${(num / 1000000).toFixed(1)}M STT`;
+      return `${(num / 1000000).toFixed(1)}M FOGO`;
     } else if (num >= 1000) {
-      return `${(num / 1000).toFixed(1)}K STT`;
+      return `${(num / 1000).toFixed(1)}K FOGO`;
     } else {
-      return `${num.toFixed(0)} STT`;
+      return `${num.toFixed(0)} FOGO`;
     }
   };
 
@@ -90,7 +90,7 @@ export function StatsDashboard(props: StatsDashboardProps) {
     {
       title: "Tokens Distributed",
       value: formatTokenAmount(stats.totalDistributed),
-      description: "Total STT distributed",
+      description: "Total FOGO distributed",
       icon: TrendingUp,
       trend: "+15.3%"
     },

@@ -82,11 +82,11 @@ export function FaucetStatus(props: FaucetStatusProps) {
   const formatBalance = (balance: string) => {
     const num = parseFloat(balance);
     if (num >= 1000000) {
-      return `${(num / 1000000).toFixed(1)}M STT`;
+      return `${(num / 1000000).toFixed(1)}M FOGO`;
     } else if (num >= 1000) {
-      return `${(num / 1000).toFixed(1)}K STT`;
+      return `${(num / 1000).toFixed(1)}K FOGO`;
     } else {
-      return `${num.toFixed(0)} STT`;
+      return `${num.toFixed(0)} FOGO`;
     }
   };
 
@@ -137,7 +137,7 @@ export function FaucetStatus(props: FaucetStatusProps) {
               Daily Limit per User
             </div>
             <div className="text-xl font-semibold font-mono" data-testid="text-daily-limit">
-              {status.dailyLimit} STT
+              {status.dailyLimit} FOGO
             </div>
           </div>
           
