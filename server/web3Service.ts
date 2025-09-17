@@ -22,11 +22,20 @@ export class Web3Service {
   private initialize() {
     if (this.isInitialized) return;
 
-    const rpcUrl = process.env.SOLANA_RPC_URL || process.env.FOGO_RPC_URL || "https://testnet.fogo.io";
+    const rpcUrl = process.env.SOLANA_RPC_URL || process.env.FOGO_RPC_URL || "https://rpc.fogo.io";
     const privateKeyBase58 = process.env.PRIVATE_KEY;
+
+    console.log("Initializing Web3Service...");
+    console.log("RPC URL:", rpcUrl);
+    console.log("PRIVATE_KEY exists:", !!privateKeyBase58);
+    console.log("PRIVATE_KEY length:", privateKeyBase58?.length || 0);
 
     if (!privateKeyBase58) {
       throw new Error("PRIVATE_KEY must be set in environment variables (base58 encoded Solana private key)");
+    }
+
+    if (privateKeyBase58.trim() === "") {
+      throw new Error("PRIVATE_KEY is empty. Please provide a valid base58 encoded Solana private key");
     }
 
     try {
