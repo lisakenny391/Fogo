@@ -41,13 +41,13 @@ const getRealTransactionCount = async (address: string): Promise<number> => {
   }
 };
 
-// Validation schemas - Using Ethereum/EVM format since we're using ethers.js
+// Validation schemas - Using Solana address format
 const checkEligibilitySchema = z.object({
-  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address format"),
+  walletAddress: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "Invalid Solana address format"),
 });
 
 const claimTokensSchema = z.object({
-  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address format"),
+  walletAddress: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "Invalid Solana address format"),
 });
 
 // Enhanced eligibility helper with Fogo rules
