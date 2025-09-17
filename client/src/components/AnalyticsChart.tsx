@@ -1,34 +1,26 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 import { TrendingUp, BarChart3 } from "lucide-react";
-
-interface ChartData {
-  name: string;
-  claims: number;
-  users: number;
-}
+import { useQuery } from "@tanstack/react-query";
+import { faucetApi } from "@/lib/api";
 
 interface AnalyticsChartProps {
-  data?: ChartData[];
   type?: "line" | "bar";
   title?: string;
   description?: string;
 }
 
 export function AnalyticsChart({ 
-  data = [
-    { name: "Mon", claims: 45, users: 23 },
-    { name: "Tue", claims: 52, users: 28 },
-    { name: "Wed", claims: 38, users: 19 },
-    { name: "Thu", claims: 61, users: 34 },
-    { name: "Fri", claims: 73, users: 41 },
-    { name: "Sat", claims: 69, users: 38 },
-    { name: "Sun", claims: 48, users: 26 }
-  ],
   type = "line",
   title = "Weekly Analytics",
   description = "Claims and user activity over the past week"
 }: AnalyticsChartProps) {
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['/api/stats/chart'],
+    queryFn: () => faucetApi.getChartData(),
+    refetchInterval: 60000, // Refetch every minute
+  });
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -45,6 +37,79 @@ export function AnalyticsChart({
     }
     return null;
   };
+
+  if (isLoading) {
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            {type === "line" ? (
+              <TrendingUp className="h-5 w-5 text-primary" />
+            ) : (
+              <BarChart3 className="h-5 w-5 text-primary" />
+            )}
+            {title}
+          </CardTitle>
+          <CardDescription>
+            {description}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] w-full flex items-center justify-center">
+            <div className="animate-pulse space-y-4 w-full">
+              <div className="h-4 bg-muted rounded w-1/4"></div>
+              <div className="space-y-2">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="h-8 bg-muted rounded" style={{ width: `${60 + Math.random() * 40}%` }}></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            {type === "line" ? (
+              <TrendingUp className="h-5 w-5 text-primary" />
+            ) : (
+              <BarChart3 className="h-5 w-5 text-primary" />
+            )}
+            {title}
+          </CardTitle>
+          <CardDescription>
+            {description}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] w-full flex items-center justify-center">
+            <div className="text-center">
+              <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-sm text-muted-foreground">
+                Failed to load chart data. Please try refreshing.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // If no data yet, show empty state with sample data
+  const chartData = data.length > 0 ? data : [
+    { date: "Mon", claims: 0, users: 0 },
+    { date: "Tue", claims: 0, users: 0 },
+    { date: "Wed", claims: 0, users: 0 },
+    { date: "Thu", claims: 0, users: 0 },
+    { date: "Fri", claims: 0, users: 0 },
+    { date: "Sat", claims: 0, users: 0 },
+    { date: "Sun", claims: 0, users: 0 }
+  ];
 
   return (
     <Card className="w-full">
@@ -65,10 +130,10 @@ export function AnalyticsChart({
         <div className="h-[300px] w-full" data-testid="analytics-chart">
           <ResponsiveContainer width="100%" height="100%">
             {type === "line" ? (
-              <LineChart data={data}>
+              <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis 
-                  dataKey="name" 
+                  dataKey="date" 
                   className="text-xs fill-muted-foreground"
                   axisLine={false}
                   tickLine={false}
@@ -97,10 +162,10 @@ export function AnalyticsChart({
                 />
               </LineChart>
             ) : (
-              <BarChart data={data}>
+              <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis 
-                  dataKey="name" 
+                  dataKey="date" 
                   className="text-xs fill-muted-foreground"
                   axisLine={false}
                   tickLine={false}
@@ -136,6 +201,14 @@ export function AnalyticsChart({
             <span className="text-sm text-muted-foreground">Users</span>
           </div>
         </div>
+        
+        {data.length === 0 && (
+          <div className="text-center mt-4">
+            <p className="text-xs text-muted-foreground">
+              No activity data yet. Start using the faucet to see analytics.
+            </p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

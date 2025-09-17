@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Coins, CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { faucetApi } from "@/lib/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface ClaimInterfaceProps {
   walletAddress?: string;
@@ -20,10 +22,10 @@ export function ClaimInterface({
 }: ClaimInterfaceProps) {
   const [claimAmount, setClaimAmount] = useState("10");
   const [isChecking, setIsChecking] = useState(false);
-  const [isClaiming, setIsClaiming] = useState(false);
   const [eligibilityStatus, setEligibilityStatus] = useState<"idle" | "eligible" | "ineligible" | "cooldown">("idle");
   const [lastClaimTime, setLastClaimTime] = useState<string | null>(null);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const checkEligibility = async () => {
     if (!isConnected || !walletAddress) {
@@ -38,22 +40,18 @@ export function ClaimInterface({
     setIsChecking(true);
     
     try {
-      // Mock eligibility check - in real app this would call API
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const result = await faucetApi.checkEligibility(walletAddress);
       
-      // Simulate different eligibility states
-      const random = Math.random();
-      if (random > 0.7) {
-        setEligibilityStatus("cooldown");
-        setLastClaimTime("2 hours ago");
-      } else if (random > 0.1) {
+      if (result.eligible) {
         setEligibilityStatus("eligible");
         setLastClaimTime(null);
       } else {
-        setEligibilityStatus("ineligible");
-        setLastClaimTime(null);
+        setEligibilityStatus("cooldown");
+        setLastClaimTime(result.reason || "Recently claimed");
       }
     } catch (error) {
+      console.error('Eligibility check failed:', error);
+      setEligibilityStatus("ineligible");
       toast({
         title: "Check Failed",
         description: "Failed to check eligibility. Please try again.",
@@ -64,32 +62,37 @@ export function ClaimInterface({
     }
   };
 
-  const handleClaim = async () => {
-    if (eligibilityStatus !== "eligible") return;
-    
-    setIsClaiming(true);
-    
-    try {
-      // Mock claim process - in real app this would interact with blockchain
-      await new Promise(resolve => setTimeout(resolve, 2500));
-      
+  const claimMutation = useMutation({
+    mutationFn: () => faucetApi.claimTokens(walletAddress, claimAmount),
+    onSuccess: (data) => {
       onClaim?.(claimAmount);
       setEligibilityStatus("cooldown");
       setLastClaimTime("Just now");
       
       toast({
-        title: "Claim Successful!",
-        description: `Successfully claimed ${claimAmount} STT tokens`,
+        title: "Claim Submitted!",
+        description: data.message,
       });
-    } catch (error) {
+      
+      // Invalidate and refetch related queries
+      queryClient.invalidateQueries({ queryKey: ['/api/stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/claims/recent'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/faucet/status'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/leaderboard'] });
+    },
+    onError: (error: any) => {
+      console.error('Claim failed:', error);
       toast({
         title: "Claim Failed",
-        description: "Failed to claim tokens. Please try again.",
+        description: error.message || "Failed to claim tokens. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      setIsClaiming(false);
     }
+  });
+
+  const handleClaim = async () => {
+    if (eligibilityStatus !== "eligible" || !walletAddress) return;
+    claimMutation.mutate();
   };
 
   const getEligibilityBadge = () => {
@@ -174,11 +177,11 @@ export function ClaimInterface({
         {eligibilityStatus === "eligible" && (
           <Button 
             onClick={handleClaim}
-            disabled={isClaiming}
+            disabled={claimMutation.isPending}
             className="w-full"
             data-testid="button-claim-tokens"
           >
-            {isClaiming ? "Claiming..." : `Claim ${claimAmount} STT`}
+            {claimMutation.isPending ? "Claiming..." : `Claim ${claimAmount} STT`}
           </Button>
         )}
 

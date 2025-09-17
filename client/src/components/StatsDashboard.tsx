@@ -1,54 +1,105 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, Users, Coins, Clock } from "lucide-react";
-
-interface StatsData {
-  totalClaims: string;
-  totalUsers: string;
-  tokensDistributed: string;
-  avgClaimTime: string;
-}
+import { useQuery } from "@tanstack/react-query";
+import { faucetApi } from "@/lib/api";
 
 interface StatsDashboardProps {
-  stats?: StatsData;
+  // Props are optional since we'll fetch data from API
 }
 
-export function StatsDashboard({ 
-  stats = {
-    totalClaims: "12,456",
-    totalUsers: "3,789",
-    tokensDistributed: "1.2M STT",
-    avgClaimTime: "2.3s"
+export function StatsDashboard(props: StatsDashboardProps) {
+  const { data: stats, isLoading, error } = useQuery({
+    queryKey: ['/api/stats'],
+    queryFn: () => faucetApi.getStats(),
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Card key={i} className="hover-elevate">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                <div className="h-4 bg-muted rounded w-20 animate-pulse"></div>
+              </CardTitle>
+              <div className="h-4 w-4 bg-muted rounded animate-pulse"></div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-8 bg-muted rounded w-24 animate-pulse mb-2"></div>
+              <div className="h-3 bg-muted rounded w-32 animate-pulse"></div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
   }
-}: StatsDashboardProps) {
-  
+
+  if (error || !stats) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="col-span-full">
+          <CardContent className="pt-6">
+            <div className="p-3 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-sm text-red-700 dark:text-red-400">
+                Failed to load statistics. Please try refreshing the page.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) {
+      return `${(num / 1000000).toFixed(1)}M`;
+    } else if (num >= 1000) {
+      return `${(num / 1000).toFixed(1)}K`;
+    } else {
+      return num.toString();
+    }
+  };
+
+  const formatTokenAmount = (amount: string) => {
+    const num = parseFloat(amount);
+    if (num >= 1000000) {
+      return `${(num / 1000000).toFixed(1)}M STT`;
+    } else if (num >= 1000) {
+      return `${(num / 1000).toFixed(1)}K STT`;
+    } else {
+      return `${num.toFixed(0)} STT`;
+    }
+  };
+
   const statItems = [
     {
       title: "Total Claims",
-      value: stats.totalClaims,
+      value: formatNumber(stats.totalClaims),
       description: "Successful token claims",
       icon: Coins,
       trend: "+12.5%"
     },
     {
       title: "Active Users",
-      value: stats.totalUsers,
+      value: formatNumber(stats.totalUsers),
       description: "Unique wallet addresses",
       icon: Users,
       trend: "+8.2%"
     },
     {
       title: "Tokens Distributed",
-      value: stats.tokensDistributed,
+      value: formatTokenAmount(stats.totalDistributed),
       description: "Total STT distributed",
       icon: TrendingUp,
       trend: "+15.3%"
     },
     {
-      title: "Avg Claim Time",
-      value: stats.avgClaimTime,
-      description: "Average processing time",
+      title: "Faucet Balance",
+      value: formatTokenAmount(stats.faucetBalance),
+      description: "Available for distribution",
       icon: Clock,
-      trend: "-0.5s"
+      trend: stats.isActive ? "Online" : "Offline"
     }
   ];
 
@@ -72,8 +123,9 @@ export function StatsDashboard({
               </p>
               <span className={`text-xs font-medium ${
                 item.trend.startsWith('+') ? 'text-green-600' : 
-                item.trend.startsWith('-') && item.title === "Avg Claim Time" ? 'text-green-600' :
-                'text-red-600'
+                item.trend === "Online" ? 'text-green-600' :
+                item.trend === "Offline" ? 'text-red-600' :
+                'text-muted-foreground'
               }`}>
                 {item.trend}
               </span>
