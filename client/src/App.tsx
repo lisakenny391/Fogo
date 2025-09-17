@@ -32,10 +32,9 @@ function FaucetPage({
         </p>
       </div>
 
-      {/* Main Interface Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left Column */}
-        <div className="space-y-6">
+      {/* Main Interface */}
+      <div className="flex justify-center">
+        <div className="w-full max-w-md">
           {!isWalletConnected ? (
             <WalletConnection 
               onConnect={onWalletConnect}
@@ -48,11 +47,6 @@ function FaucetPage({
               onClaim={onClaim}
             />
           )}
-        </div>
-
-        {/* Right Column */}
-        <div className="space-y-6">
-          <RecentActivity />
         </div>
       </div>
 
