@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Wallet, Copy, ExternalLink, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { ethers } from "ethers";
+// Removed ethers.js since we're using Solana
 
 interface WalletConnectionProps {
   onConnect?: (address: string) => void;
@@ -21,18 +21,14 @@ export function WalletConnection({ onConnect, onDisconnect }: WalletConnectionPr
     setIsConnecting(true);
     
     try {
-      // Check if MetaMask is installed
-      if (typeof (window as any).ethereum === 'undefined') {
-        throw new Error('MetaMask is not installed. Please install MetaMask to continue.');
+      // Check if Phantom wallet is installed
+      if (typeof (window as any).solana === 'undefined') {
+        throw new Error('Phantom wallet is not installed. Please install Phantom wallet to continue.');
       }
 
-      // Request account access
-      const provider = new ethers.BrowserProvider((window as any).ethereum);
-      await provider.send("eth_requestAccounts", []);
-      
-      // Get the signer (connected account)
-      const signer = await provider.getSigner();
-      const walletAddress = await signer.getAddress();
+      // Request wallet connection
+      const response = await (window as any).solana.connect();
+      const walletAddress = response.publicKey.toString();
       
       setAddress(walletAddress);
       setIsConnected(true);
@@ -46,8 +42,8 @@ export function WalletConnection({ onConnect, onDisconnect }: WalletConnectionPr
       console.error('Wallet connection error:', error);
       let errorMessage = "Failed to connect wallet. Please try again.";
       
-      if (error.message?.includes('MetaMask is not installed')) {
-        errorMessage = "MetaMask is not installed. Please install MetaMask browser extension to continue.";
+      if (error.message?.includes('Phantom wallet is not installed')) {
+        errorMessage = "Phantom wallet is not installed. Please install Phantom wallet browser extension to continue.";
       } else if (error.code === 4001) {
         errorMessage = "Connection rejected. Please accept the connection request in your wallet.";
       } else if (error.code === -32002) {
@@ -165,7 +161,7 @@ export function WalletConnection({ onConnect, onDisconnect }: WalletConnectionPr
         </div>
         
         <div className="text-center text-sm text-muted-foreground">
-          Network: FOGO Network
+          Network: Solana
         </div>
       </CardContent>
     </Card>

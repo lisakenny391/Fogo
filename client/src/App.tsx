@@ -7,7 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { Navigation } from "./components/Navigation";
 import { WalletConnection } from "./components/WalletConnection";
-import { FaucetStatus } from "./components/FaucetStatus";
 import { ClaimInterface } from "./components/ClaimInterface";
 import { StatsDashboard } from "./components/StatsDashboard";
 import { RecentActivity } from "./components/RecentActivity";
@@ -32,9 +31,6 @@ function FaucetPage({
           Fast, secure, and reliable token distribution.
         </p>
       </div>
-
-      {/* Faucet Status */}
-      <FaucetStatus />
 
       {/* Main Interface Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -136,7 +132,6 @@ function ActivityPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <RecentActivity />
         <div className="space-y-6">
-          <FaucetStatus />
           <AnalyticsChart 
             type="bar"
             title="Hourly Activity"
