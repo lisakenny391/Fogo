@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Coins, CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
+import { Coins, CheckCircle, XCircle, Clock, AlertTriangle, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { faucetApi } from "@/lib/api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -22,6 +22,7 @@ export function ClaimInterface({
   const [eligibilityStatus, setEligibilityStatus] = useState<"idle" | "eligible" | "ineligible" | "cooldown">("idle");
   const [eligibilityData, setEligibilityData] = useState<any>(null);
   const [lastClaimTime, setLastClaimTime] = useState<string | null>(null);
+  const [lastClaimId, setLastClaimId] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -102,10 +103,11 @@ export function ClaimInterface({
       onClaim?.(eligibilityData?.proposedAmount || "0");
       setEligibilityStatus("cooldown");
       setLastClaimTime("Just now");
+      setLastClaimId(data.claimId);
       
       toast({
         title: "Claim Submitted!",
-        description: data.message,
+        description: data.message + " Check Recent Activity for transaction details.",
       });
       
       // Invalidate and refetch related queries
@@ -190,9 +192,26 @@ export function ClaimInterface({
         )}
 
         {(eligibilityStatus === "ineligible" || eligibilityStatus === "cooldown") && (
-          <Button disabled className="w-full">
-            Not Eligible
-          </Button>
+          <div className="space-y-3">
+            <Button disabled className="w-full">
+              Not Eligible
+            </Button>
+            {lastClaimId && lastClaimTime === "Just now" && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
+                <div className="text-sm text-blue-700 dark:text-blue-400 mb-2">
+                  <Clock className="h-4 w-4 inline mr-1" />
+                  Your claim is being processed on the blockchain...
+                </div>
+                <div className="text-xs text-blue-600 dark:text-blue-300">
+                  View transaction details in{" "}
+                  <a href="#" onClick={() => window.location.hash = '#/activity'} className="underline hover:no-underline">
+                    Recent Activity
+                  </a>
+                  {" "}once confirmed
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
       </CardContent>

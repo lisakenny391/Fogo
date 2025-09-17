@@ -178,6 +178,8 @@ export function RecentActivity({ limit = 20 }: RecentActivityProps) {
                           variant="ghost"
                           size="icon"
                           className="h-4 w-4"
+                          onClick={() => window.open(`https://explorer.fogo.io/tx/${activity.transactionHash}`, '_blank')}
+                          title="View transaction on Fogo Explorer"
                           data-testid={`view-tx-${activity.id}`}
                         >
                           <ExternalLink className="h-2 w-2" />
