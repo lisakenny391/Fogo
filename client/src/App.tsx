@@ -60,11 +60,6 @@ function FaucetPage({
         </div>
       </div>
 
-      {/* Statistics Dashboard */}
-      <div className="space-y-4">
-        <h2 className="text-2xl font-bold">Faucet Statistics</h2>
-        <StatsDashboard />
-      </div>
     </div>
   );
 }

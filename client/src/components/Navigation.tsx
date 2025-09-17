@@ -68,9 +68,8 @@ export function Navigation({
             {!isWalletConnected ? (
               <Button
                 onClick={() => {
-                  // Mock connection for prototype
-                  const mockAddress = "0x742d35Cc6e34C0532925a3b8D0f5757d112e4b01";
-                  onWalletConnect?.(mockAddress);
+                  // Navigate to faucet page where WalletConnection component handles real wallet connection
+                  handleNavigation("/");
                 }}
                 data-testid="nav-connect-wallet"
               >
@@ -133,9 +132,8 @@ export function Navigation({
                 {!isWalletConnected ? (
                   <Button
                     onClick={() => {
-                      const mockAddress = "0x742d35Cc6e34C0532925a3b8D0f5757d112e4b01";
-                      onWalletConnect?.(mockAddress);
-                      setIsMobileMenuOpen(false);
+                      // Navigate to faucet page where WalletConnection component handles real wallet connection
+                      handleNavigation("/");
                     }}
                     className="w-full"
                     data-testid="mobile-connect-wallet"

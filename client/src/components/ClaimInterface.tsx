@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,37 @@ export function ClaimInterface({
   const [lastClaimTime, setLastClaimTime] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isMountedRef = useRef(true);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Automatically check eligibility when wallet connects
+  useEffect(() => {
+    if (isConnected && walletAddress && eligibilityStatus === "idle") {
+      // Check eligibility twice as requested for security
+      const performDoubleCheck = async () => {
+        if (!isMountedRef.current) return;
+        await checkEligibility();
+        
+        // Wait a moment, then check again to ensure consistency
+        timeoutRef.current = setTimeout(async () => {
+          if (isMountedRef.current) {
+            await checkEligibility();
+          }
+        }, 1000);
+      };
+      performDoubleCheck();
+    }
+  }, [isConnected, walletAddress]);
 
   const checkEligibility = async () => {
     if (!isConnected || !walletAddress) {
@@ -166,15 +197,10 @@ export function ClaimInterface({
           </div>
         )}
 
-        {isConnected && eligibilityStatus === "idle" && (
-          <Button 
-            onClick={checkEligibility}
-            disabled={isChecking}
-            className="w-full"
-            data-testid="button-check-eligibility"
-          >
-            {isChecking ? "Checking..." : "Check Eligibility"}
-          </Button>
+        {isConnected && isChecking && eligibilityStatus === "idle" && (
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
+            <div className="text-sm text-blue-700 dark:text-blue-400">Checking eligibility automatically...</div>
+          </div>
         )}
 
         {eligibilityStatus === "eligible" && (
@@ -210,17 +236,6 @@ export function ClaimInterface({
           </div>
         )}
 
-        {isConnected && (
-          <Button 
-            variant="outline" 
-            onClick={checkEligibility}
-            disabled={isChecking}
-            className="w-full"
-            data-testid="button-recheck-eligibility"
-          >
-            Recheck Eligibility
-          </Button>
-        )}
       </CardContent>
     </Card>
   );

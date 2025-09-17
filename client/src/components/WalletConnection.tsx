@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Wallet, Copy, ExternalLink, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ethers } from "ethers";
 
 interface WalletConnectionProps {
   onConnect?: (address: string) => void;
@@ -20,21 +21,42 @@ export function WalletConnection({ onConnect, onDisconnect }: WalletConnectionPr
     setIsConnecting(true);
     
     try {
-      // Mock Web3 connection - in real app this would use ethers.js
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      const mockAddress = "0x742d35Cc6e34C0532925a3b8D0f5757d112e4b01";
-      setAddress(mockAddress);
+      // Check if MetaMask is installed
+      if (typeof (window as any).ethereum === 'undefined') {
+        throw new Error('MetaMask is not installed. Please install MetaMask to continue.');
+      }
+
+      // Request account access
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      await provider.send("eth_requestAccounts", []);
+      
+      // Get the signer (connected account)
+      const signer = await provider.getSigner();
+      const walletAddress = await signer.getAddress();
+      
+      setAddress(walletAddress);
       setIsConnected(true);
-      onConnect?.(mockAddress);
+      onConnect?.(walletAddress);
       
       toast({
         title: "Wallet Connected",
         description: "Successfully connected to your wallet",
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Wallet connection error:', error);
+      let errorMessage = "Failed to connect wallet. Please try again.";
+      
+      if (error.message?.includes('MetaMask is not installed')) {
+        errorMessage = "MetaMask is not installed. Please install MetaMask browser extension to continue.";
+      } else if (error.code === 4001) {
+        errorMessage = "Connection rejected. Please accept the connection request in your wallet.";
+      } else if (error.code === -32002) {
+        errorMessage = "Connection request is already pending. Please check your wallet.";
+      }
+      
       toast({
         title: "Connection Failed",
-        description: "Failed to connect wallet. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -143,7 +165,7 @@ export function WalletConnection({ onConnect, onDisconnect }: WalletConnectionPr
         </div>
         
         <div className="text-center text-sm text-muted-foreground">
-          Network: Somnia Testnet
+          Network: FOGO Network
         </div>
       </CardContent>
     </Card>
