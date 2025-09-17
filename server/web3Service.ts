@@ -24,12 +24,12 @@ export class Web3Service {
 
     // Use correct Fogo RPC URL
     let fogoRpcUrl = process.env.FOGO_RPC_URL;
-    if (fogoRpcUrl && (fogoRpcUrl.includes('explorer.fogo.io') || fogoRpcUrl.includes('testnet.fogo.io'))) {
-      fogoRpcUrl = "https://rpc.fogo.io";
-      console.log("Fixed FOGO_RPC_URL to correct RPC endpoint: https://rpc.fogo.io");
+    if (fogoRpcUrl && fogoRpcUrl.includes('explorer.fogo.io')) {
+      fogoRpcUrl = "https://testnet.fogo.io";
+      console.log("Fixed FOGO_RPC_URL to correct RPC endpoint: https://testnet.fogo.io");
     }
     
-    const rpcUrl = process.env.SOLANA_RPC_URL || fogoRpcUrl || "https://rpc.fogo.io";
+    const rpcUrl = process.env.SOLANA_RPC_URL || fogoRpcUrl || "https://testnet.fogo.io";
     const privateKeyBase58 = process.env.PRIVATE_KEY;
 
     console.log("Initializing Web3Service...");
