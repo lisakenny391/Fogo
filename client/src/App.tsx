@@ -99,12 +99,6 @@ function AnalyticsPage() {
         type="line"
         title="Monthly Overview"
         description="Comprehensive monthly statistics"
-        data={[
-          { name: "Week 1", claims: 245, users: 89 },
-          { name: "Week 2", claims: 312, users: 112 },
-          { name: "Week 3", claims: 398, users: 134 },
-          { name: "Week 4", claims: 456, users: 167 }
-        ]}
       />
     </div>
   );
@@ -152,12 +146,6 @@ function ActivityPage() {
             type="bar"
             title="Hourly Activity"
             description="Claims activity by hour"
-            data={[
-              { name: "12AM", claims: 12, users: 8 },
-              { name: "6AM", claims: 24, users: 15 },
-              { name: "12PM", claims: 45, users: 28 },
-              { name: "6PM", claims: 38, users: 22 }
-            ]}
           />
         </div>
       </div>
