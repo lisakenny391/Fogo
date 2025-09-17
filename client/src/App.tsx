@@ -8,7 +8,6 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { Navigation } from "./components/Navigation";
 import { AddressInput } from "./components/AddressInput";
 import { ClaimInterface } from "./components/ClaimInterface";
-import { StatsDashboard } from "./components/StatsDashboard";
 import { RecentActivity } from "./components/RecentActivity";
 import { Leaderboard } from "./components/Leaderboard";
 import { AnalyticsChart } from "./components/AnalyticsChart";
@@ -69,8 +68,6 @@ function AnalyticsPage() {
         </p>
       </div>
 
-      <StatsDashboard />
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AnalyticsChart 
           type="line"
@@ -104,14 +101,7 @@ function LeaderboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <Leaderboard />
-        </div>
-        <div className="space-y-6">
-          <StatsDashboard />
-        </div>
-      </div>
+      <Leaderboard />
     </div>
   );
 }

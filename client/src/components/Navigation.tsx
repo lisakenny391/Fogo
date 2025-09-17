@@ -43,7 +43,7 @@ export function Navigation({
           {/* Logo */}
           <div className="flex items-center gap-2">
             <Droplets className="h-6 w-6 text-primary" />
-            <span className="font-bold text-xl">STT Faucet</span>
+            <span className="font-bold text-xl">FOGO Faucet</span>
           </div>
 
           {/* Desktop Navigation */}
@@ -64,31 +64,6 @@ export function Navigation({
 
           {/* Desktop Controls */}
           <div className="hidden md:flex items-center gap-2">
-            {!isWalletConnected ? (
-              <Button
-                onClick={() => {
-                  // Navigate to faucet page where WalletConnection component handles real wallet connection
-                  handleNavigation("/");
-                }}
-                data-testid="nav-connect-wallet"
-              >
-                Connect Wallet
-              </Button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {walletAddress?.slice(0, 6)}...{walletAddress?.slice(-4)}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onWalletDisconnect}
-                  data-testid="nav-disconnect-wallet"
-                >
-                  Disconnect
-                </Button>
-              </div>
-            )}
             <ThemeToggle />
           </div>
 
@@ -126,38 +101,6 @@ export function Navigation({
                   {item.label}
                 </Button>
               ))}
-              
-              <div className="pt-4 border-t">
-                {!isWalletConnected ? (
-                  <Button
-                    onClick={() => {
-                      // Navigate to faucet page where WalletConnection component handles real wallet connection
-                      handleNavigation("/");
-                    }}
-                    className="w-full"
-                    data-testid="mobile-connect-wallet"
-                  >
-                    Connect Wallet
-                  </Button>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      Connected: {walletAddress?.slice(0, 6)}...{walletAddress?.slice(-4)}
-                    </div>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        onWalletDisconnect?.();
-                        setIsMobileMenuOpen(false);
-                      }}
-                      className="w-full"
-                      data-testid="mobile-disconnect-wallet"
-                    >
-                      Disconnect Wallet
-                    </Button>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         )}

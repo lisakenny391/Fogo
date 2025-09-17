@@ -218,12 +218,6 @@ export function ClaimInterface({
       <CardContent className="space-y-4">
 {/* Removed detailed eligibility information as requested by user */}
 
-        {!isConnected && (
-          <div className="p-3 bg-muted rounded-lg flex items-center gap-2 text-sm">
-            <AlertTriangle className="h-4 w-4 text-yellow-500" />
-            Connect your wallet to check eligibility
-          </div>
-        )}
 
         {isConnected && isChecking && eligibilityStatus === "idle" && (
           <div className="p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
