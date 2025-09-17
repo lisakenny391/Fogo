@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, Users, Coins, Clock } from "lucide-react";
+import { TrendingUp, Users, Coins } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { faucetApi } from "@/lib/api";
 
@@ -16,8 +16,8 @@ export function StatsDashboard(props: StatsDashboardProps) {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
           <Card key={i} className="hover-elevate">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -37,7 +37,7 @@ export function StatsDashboard(props: StatsDashboardProps) {
 
   if (error || !stats) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card className="col-span-full">
           <CardContent className="pt-6">
             <div className="p-3 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg">
@@ -93,18 +93,11 @@ export function StatsDashboard(props: StatsDashboardProps) {
       description: "Total FOGO distributed",
       icon: TrendingUp,
       trend: "+15.3%"
-    },
-    {
-      title: "Faucet Balance",
-      value: formatTokenAmount(stats.faucetBalance),
-      description: "Available for distribution",
-      icon: Clock,
-      trend: stats.isActive ? "Online" : "Offline"
     }
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {statItems.map((item, index) => (
         <Card key={index} className="hover-elevate">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

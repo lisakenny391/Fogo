@@ -22,7 +22,7 @@ export class Web3Service {
   private initialize() {
     if (this.isInitialized) return;
 
-    const rpcUrl = process.env.SOLANA_RPC_URL || process.env.FOGO_RPC_URL || "https://api.devnet.solana.com";
+    const rpcUrl = process.env.SOLANA_RPC_URL || process.env.FOGO_RPC_URL || "https://testnet.fogo.io";
     const privateKeyBase58 = process.env.PRIVATE_KEY;
 
     if (!privateKeyBase58) {

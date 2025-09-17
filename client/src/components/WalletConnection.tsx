@@ -81,11 +81,22 @@ export function WalletConnection({ onConnect, onDisconnect }: WalletConnectionPr
         }
       }
 
+      // Nightly Wallet
+      if ((window as any).nightly?.solana) {
+        wallets.push({
+          name: "Nightly",
+          icon: "https://nightly.app/img/logo.svg",
+          adapter: (window as any).nightly.solana,
+          installed: true,
+          readyState: "Installed"
+        });
+      }
+
       // Add not installed wallets for user to know what's available
       const installedWalletNames = wallets.map(w => w.name);
       
       // Always show major wallet options for consistency
-      const majorWallets = ["Phantom", "Solflare", "Backpack", "Slope"];
+      const majorWallets = ["Phantom", "Solflare", "Backpack", "Slope", "Nightly"];
       
       for (const walletName of majorWallets) {
         if (!installedWalletNames.includes(walletName)) {
@@ -102,6 +113,9 @@ export function WalletConnection({ onConnect, onDisconnect }: WalletConnectionPr
               break;
             case "Slope":
               icon = "https://slope.finance/img/icon.svg";
+              break;
+            case "Nightly":
+              icon = "https://nightly.app/img/logo.svg";
               break;
           }
           
@@ -174,6 +188,13 @@ export function WalletConnection({ onConnect, onDisconnect }: WalletConnectionPr
         walletAddress = wallet.adapter.solana?.publicKey?.toString();
         if (!walletAddress) {
           throw new Error("Failed to get public key from Backpack wallet");
+        }
+      } else if (wallet.name === "Nightly") {
+        // Nightly wallet connection
+        const response = await wallet.adapter.connect();
+        walletAddress = response?.publicKey?.toString() || wallet.adapter.publicKey?.toString();
+        if (!walletAddress) {
+          throw new Error("Failed to get public key from Nightly wallet");
         }
       } else {
         // Standard Solana wallet adapter (Phantom and others)
