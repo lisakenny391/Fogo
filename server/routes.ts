@@ -165,7 +165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalClaims,
         totalUsers,
         totalDistributed,
-        nextRefill: new Date(Date.now() + 24 * 60 * 60 * 1000) // Mock next refill
+        nextRefill: new Date(config.lastRefill.getTime() + 24 * 60 * 60 * 1000) // Next refill 24h after last refill
       });
     } catch (error) {
       console.error("Faucet status error:", error);
