@@ -7,12 +7,6 @@ import { createHash } from "crypto";
 import { web3Service } from "./web3Service";
 
 // Helper functions for Fogo testnet faucet
-const simulateTxCount = (address: string): number => {
-  // Deterministic hash of address mapped to [0..1500]
-  const hash = createHash('sha256').update(address.toLowerCase()).digest('hex');
-  const num = parseInt(hash.substring(0, 8), 16);
-  return num % 1501; // 0 to 1500
-};
 
 const computeProposedAmount = (txCount: number): string => {
   if (txCount >= 1000) return "3";
@@ -36,8 +30,8 @@ const getRealTransactionCount = async (address: string): Promise<number> => {
   try {
     return await web3Service.getTransactionCount(address);
   } catch (error) {
-    console.error("Failed to get real transaction count, using simulation:", error);
-    return simulateTxCount(address);
+    console.error("Failed to get real transaction count - blockchain RPC unavailable:", error);
+    throw new Error("Unable to verify wallet transaction count - blockchain RPC unavailable");
   }
 };
 

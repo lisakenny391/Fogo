@@ -190,7 +190,7 @@ export function RecentActivity({ limit = 20 }: RecentActivityProps) {
                 </div>
                 <div className="text-right space-y-1">
                   <div className="font-semibold font-mono" data-testid={`activity-amount-${activity.id}`}>
-                    {activity.amount} STT
+                    {activity.amount} FOGO
                   </div>
                   {getStatusBadge(activity.status)}
                 </div>

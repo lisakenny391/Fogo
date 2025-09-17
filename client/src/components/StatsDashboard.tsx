@@ -77,22 +77,19 @@ export function StatsDashboard(props: StatsDashboardProps) {
       title: "Total Claims",
       value: formatNumber(stats.totalClaims),
       description: "Successful token claims",
-      icon: Coins,
-      trend: "+12.5%"
+      icon: Coins
     },
     {
       title: "Active Users",
       value: formatNumber(stats.totalUsers),
       description: "Unique wallet addresses",
-      icon: Users,
-      trend: "+8.2%"
+      icon: Users
     },
     {
       title: "Tokens Distributed",
       value: formatTokenAmount(stats.totalDistributed),
       description: "Total FOGO distributed",
-      icon: TrendingUp,
-      trend: "+15.3%"
+      icon: TrendingUp
     }
   ];
 
@@ -110,19 +107,9 @@ export function StatsDashboard(props: StatsDashboardProps) {
             <div className="text-2xl font-bold font-mono" data-testid={`stat-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
               {item.value}
             </div>
-            <div className="flex items-center justify-between mt-2">
-              <p className="text-xs text-muted-foreground">
-                {item.description}
-              </p>
-              <span className={`text-xs font-medium ${
-                item.trend.startsWith('+') ? 'text-green-600' : 
-                item.trend === "Online" ? 'text-green-600' :
-                item.trend === "Offline" ? 'text-red-600' :
-                'text-muted-foreground'
-              }`}>
-                {item.trend}
-              </span>
-            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              {item.description}
+            </p>
           </CardContent>
         </Card>
       ))}

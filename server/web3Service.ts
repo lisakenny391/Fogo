@@ -24,7 +24,7 @@ export class Web3Service {
 
     // Use correct Fogo RPC URL
     let fogoRpcUrl = process.env.FOGO_RPC_URL;
-    if (fogoRpcUrl && fogoRpcUrl.includes('explorer.fogo.io')) {
+    if (fogoRpcUrl && (fogoRpcUrl.includes('explorer.fogo.io') || fogoRpcUrl.includes('testnet.fogo.io'))) {
       fogoRpcUrl = "https://rpc.fogo.io";
       console.log("Fixed FOGO_RPC_URL to correct RPC endpoint: https://rpc.fogo.io");
     }
@@ -171,18 +171,10 @@ export class Web3Service {
       return signatures.length;
     } catch (error: any) {
       console.error("Error getting transaction count:", error);
-      // Fallback to simulated count if RPC fails
-      console.log("Falling back to simulated transaction count");
-      return this.simulateTxCount(walletAddress);
+      throw new Error(`Failed to get wallet transaction count: ${error.message}`);
     }
   }
 
-  private simulateTxCount(address: string): number {
-    // Deterministic hash of address mapped to [0..1500]
-    const hash = createHash('sha256').update(address.toLowerCase()).digest('hex');
-    const num = parseInt(hash.substring(0, 8), 16);
-    return num % 1501; // 0 to 1500
-  }
 
   getFaucetAddress(): string {
     this.initialize();

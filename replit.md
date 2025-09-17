@@ -1,6 +1,6 @@
 # Overview
 
-This is a cryptocurrency faucet application for distributing STT (Somnia Testnet Tokens) on the Solana/Fogo testnet blockchain. The application provides free testnet tokens to developers with distribution amounts calculated based on wallet transaction history. It features a modern React frontend with shadcn/ui components, an Express.js backend with Drizzle ORM for database management, and comprehensive analytics and rate limiting capabilities.
+This is a cryptocurrency faucet application for distributing FOGO tokens on the Solana/Fogo testnet blockchain. The application provides free testnet tokens to developers with distribution amounts calculated based on wallet transaction history. It features a modern React frontend with shadcn/ui components, an Express.js backend with Drizzle ORM for database management, and comprehensive analytics and rate limiting capabilities.
 
 # User Preferences
 

@@ -112,7 +112,7 @@ export function AddressInput({ onAddressSubmit, currentAddress }: AddressInputPr
           Enter Wallet Address
         </CardTitle>
         <CardDescription>
-          Paste your Fogo/Solana wallet address to check eligibility and claim STT tokens
+          Paste your Fogo/Solana wallet address to check eligibility and claim FOGO tokens
         </CardDescription>
       </CardHeader>
       <CardContent>

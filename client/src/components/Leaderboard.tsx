@@ -10,7 +10,7 @@ interface LeaderboardProps {
   limit?: number;
 }
 
-export function Leaderboard({ limit = 10 }: LeaderboardProps) {
+export function Leaderboard({ limit = 1000 }: LeaderboardProps) {
   const { toast } = useToast();
   
   const { data: entries, isLoading, error } = useQuery({
@@ -189,7 +189,7 @@ export function Leaderboard({ limit = 10 }: LeaderboardProps) {
                   {getRankBadge(entry.rank)}
                 </div>
                 <div className="font-semibold font-mono text-sm" data-testid={`leaderboard-amount-${entry.rank}`}>
-                  {entry.totalAmount} STT
+                  {entry.totalAmount} FOGO
                 </div>
                 <div className="text-xs text-muted-foreground" data-testid={`leaderboard-claims-${entry.rank}`}>
                   {entry.claims} claims
