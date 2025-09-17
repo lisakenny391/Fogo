@@ -20,9 +20,9 @@ export function ClaimInterface({
   isConnected = false,
   onClaim 
 }: ClaimInterfaceProps) {
-  const [claimAmount, setClaimAmount] = useState("10");
   const [isChecking, setIsChecking] = useState(false);
   const [eligibilityStatus, setEligibilityStatus] = useState<"idle" | "eligible" | "ineligible" | "cooldown">("idle");
+  const [eligibilityData, setEligibilityData] = useState<any>(null);
   const [lastClaimTime, setLastClaimTime] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -42,11 +42,16 @@ export function ClaimInterface({
     try {
       const result = await faucetApi.checkEligibility(walletAddress);
       
+      setEligibilityData(result);
       if (result.eligible) {
         setEligibilityStatus("eligible");
         setLastClaimTime(null);
       } else {
-        setEligibilityStatus("cooldown");
+        if (result.balanceExceeded) {
+          setEligibilityStatus("ineligible");
+        } else {
+          setEligibilityStatus("cooldown");
+        }
         setLastClaimTime(result.reason || "Recently claimed");
       }
     } catch (error) {
@@ -63,9 +68,9 @@ export function ClaimInterface({
   };
 
   const claimMutation = useMutation({
-    mutationFn: () => faucetApi.claimTokens(walletAddress, claimAmount),
+    mutationFn: () => faucetApi.claimTokens(walletAddress),
     onSuccess: (data) => {
-      onClaim?.(claimAmount);
+      onClaim?.(eligibilityData?.proposedAmount || "0");
       setEligibilityStatus("cooldown");
       setLastClaimTime("Just now");
       
@@ -134,27 +139,27 @@ export function ClaimInterface({
           {eligibilityStatus !== "idle" && getEligibilityBadge()}
         </CardTitle>
         <CardDescription>
-          Claim your daily FOGO tokens for testing on Fogo testnet faucet
+          Claim FOGO tokens automatically calculated based on your wallet's transaction history
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="claim-amount">Amount (FOGO)</Label>
-          <Input
-            id="claim-amount"
-            type="number"
-            value={claimAmount}
-            onChange={(e) => setClaimAmount(e.target.value)}
-            placeholder="Enter amount"
-            min="1"
-            max="100"
-            data-testid="input-claim-amount"
-            disabled={!isConnected}
-          />
-          <p className="text-xs text-muted-foreground">
-            Maximum: 100 FOGO per day
-          </p>
-        </div>
+        {eligibilityData && (
+          <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Transaction Count:</span>
+                <div className="font-mono font-bold">{eligibilityData.txnCount}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Claim Amount:</span>
+                <div className="font-mono font-bold text-primary">{eligibilityData.proposedAmount} FOGO</div>
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Amount based on wallet transaction history
+            </div>
+          </div>
+        )}
 
         {!isConnected && (
           <div className="p-3 bg-muted rounded-lg flex items-center gap-2 text-sm">
@@ -181,7 +186,7 @@ export function ClaimInterface({
             className="w-full"
             data-testid="button-claim-tokens"
           >
-            {claimMutation.isPending ? "Claiming..." : `Claim ${claimAmount} FOGO`}
+            {claimMutation.isPending ? "Claiming..." : `Claim ${eligibilityData?.proposedAmount || 0} FOGO`}
           </Button>
         )}
 

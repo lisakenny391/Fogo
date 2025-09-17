@@ -31,6 +31,7 @@ export interface IStorage {
   getTotalClaims(): Promise<number>;
   getTotalUsers(): Promise<number>;
   getTotalDistributed(): Promise<string>;
+  getWalletTotalDistributed(walletAddress: string): Promise<string>;
   getLeaderboard(limit?: number): Promise<Array<{ walletAddress: string; claims: number; totalAmount: string; lastClaim: Date }>>;
   getClaimStats(): Promise<Array<{ date: string; claims: number; users: number }>>;
 }
@@ -248,6 +249,13 @@ export class MemStorage implements IStorage {
   async getTotalDistributed(): Promise<string> {
     const total = Array.from(this.claims.values())
       .filter(claim => claim.status === "success")
+      .reduce((sum, claim) => sum + parseFloat(claim.amount), 0);
+    return total.toFixed(8);
+  }
+
+  async getWalletTotalDistributed(walletAddress: string): Promise<string> {
+    const total = Array.from(this.claims.values())
+      .filter(claim => claim.walletAddress.toLowerCase() === walletAddress.toLowerCase() && claim.status === "success")
       .reduce((sum, claim) => sum + parseFloat(claim.amount), 0);
     return total.toFixed(8);
   }

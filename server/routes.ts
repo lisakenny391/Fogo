@@ -3,25 +3,73 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertClaimSchema, insertRateLimitSchema } from "@shared/schema";
 import { z } from "zod";
+import { createHash } from "crypto";
+
+// Helper functions for Fogo testnet faucet
+const simulateTxCount = (address: string): number => {
+  // Deterministic hash of address mapped to [0..1500]
+  const hash = createHash('sha256').update(address.toLowerCase()).digest('hex');
+  const num = parseInt(hash.substring(0, 8), 16);
+  return num % 1501; // 0 to 1500
+};
+
+const computeProposedAmount = (txCount: number): string => {
+  if (txCount >= 1000) return "3";
+  if (txCount >= 400) return "2";
+  if (txCount >= 80) return "1";
+  return "0.1";
+};
+
+const getWalletFaucetBalance = async (address: string): Promise<number> => {
+  const total = await storage.getWalletTotalDistributed(address);
+  return parseFloat(total);
+};
 
 // Validation schemas
 const checkEligibilitySchema = z.object({
-  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address"),
+  walletAddress: z.string().regex(/^fogo1[0-9a-z]{20,60}$/i, "Invalid Fogo address format"),
 });
 
 const claimTokensSchema = z.object({
-  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address"),
-  amount: z.string().regex(/^\d+(\.\d{1,8})?$/, "Invalid amount format"),
+  walletAddress: z.string().regex(/^fogo1[0-9a-z]{20,60}$/i, "Invalid Fogo address format"),
 });
 
-// Rate limiting helper
-const isEligibleForClaim = async (walletAddress: string): Promise<{ eligible: boolean; reason?: string; resetTime?: Date }> => {
+// Enhanced eligibility helper with Fogo rules
+const isEligibleForClaim = async (walletAddress: string): Promise<{ 
+  eligible: boolean; 
+  reason?: string; 
+  resetTime?: Date; 
+  txnCount: number; 
+  proposedAmount: string; 
+  balanceExceeded: boolean; 
+}> => {
+  // Get transaction count and proposed amount
+  const txnCount = simulateTxCount(walletAddress);
+  const proposedAmount = computeProposedAmount(txnCount);
+  
+  // Check wallet balance (10 FOGO maximum)
+  const walletBalance = await getWalletFaucetBalance(walletAddress);
+  const balanceExceeded = walletBalance > 10;
+  
+  if (balanceExceeded) {
+    return {
+      eligible: false,
+      reason: "Wallet balance exceeds 10 FOGO",
+      txnCount,
+      proposedAmount,
+      balanceExceeded: true
+    };
+  }
+
   // Check for pending claims first to prevent concurrent claims
   const pendingClaims = await storage.getPendingClaimsByWallet(walletAddress);
   if (pendingClaims.length > 0) {
     return { 
       eligible: false, 
-      reason: "You have a pending claim. Please wait for it to complete before making another claim."
+      reason: "You have a pending claim. Please wait for it to complete before making another claim.",
+      txnCount,
+      proposedAmount,
+      balanceExceeded: false
     };
   }
 
@@ -29,7 +77,12 @@ const isEligibleForClaim = async (walletAddress: string): Promise<{ eligible: bo
   const now = new Date();
   
   if (!rateLimit) {
-    return { eligible: true };
+    return { 
+      eligible: true, 
+      txnCount, 
+      proposedAmount, 
+      balanceExceeded: false 
+    };
   }
   
   // Check if 24 hours have passed since last claim
@@ -41,11 +94,19 @@ const isEligibleForClaim = async (walletAddress: string): Promise<{ eligible: bo
     return { 
       eligible: false, 
       reason: "Daily limit reached. Please wait 24 hours between claims.",
-      resetTime 
+      resetTime,
+      txnCount,
+      proposedAmount,
+      balanceExceeded: false
     };
   }
   
-  return { eligible: true };
+  return { 
+    eligible: true, 
+    txnCount, 
+    proposedAmount, 
+    balanceExceeded: false 
+  };
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -104,43 +165,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Claim tokens endpoint
   app.post("/api/faucet/claim", async (req, res) => {
     try {
-      const { walletAddress, amount } = claimTokensSchema.parse(req.body);
+      const { walletAddress } = claimTokensSchema.parse(req.body);
       
       const config = await storage.getFaucetConfig();
       if (!config || !config.isActive) {
         return res.status(400).json({ error: "Faucet is currently inactive" });
       }
       
-      // Check eligibility (without pending check since atomic method handles it)
-      const rateLimit = await storage.getRateLimit(walletAddress);
-      const now = new Date();
+      // Check eligibility and get computed amount
+      const eligibility = await isEligibleForClaim(walletAddress);
       
-      if (rateLimit) {
-        // Check if 24 hours have passed since last claim
-        const timeSinceLastClaim = now.getTime() - rateLimit.lastClaim.getTime();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        
-        if (timeSinceLastClaim < twentyFourHours) {
-          const resetTime = new Date(rateLimit.lastClaim.getTime() + twentyFourHours);
-          return res.status(400).json({ 
-            error: "Daily limit reached. Please wait 24 hours between claims."
-          });
-        }
+      if (!eligibility.eligible) {
+        return res.status(400).json({ error: eligibility.reason || "Not eligible to claim" });
       }
       
-      // Validate amount
+      // Use server-computed amount
+      const amount = eligibility.proposedAmount;
       const requestedAmount = parseFloat(amount);
-      const dailyLimit = parseFloat(config.dailyLimit);
-      
-      if (requestedAmount > dailyLimit) {
-        return res.status(400).json({ 
-          error: `Amount exceeds daily limit of ${config.dailyLimit} FOGO` 
-        });
-      }
-      
-      if (requestedAmount <= 0) {
-        return res.status(400).json({ error: "Amount must be greater than 0" });
-      }
       
       // Check faucet balance
       const currentBalance = parseFloat(config.balance);

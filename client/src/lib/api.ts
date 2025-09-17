@@ -15,12 +15,15 @@ export interface EligibilityCheck {
   eligible: boolean;
   reason?: string;
   resetTime?: string;
+  txnCount: number;
+  proposedAmount: string;
+  balanceExceeded: boolean;
 }
 
 export interface ClaimResponse {
   claimId: string;
   status: string;
-  amount: number;
+  amount: string;
   message: string;
 }
 
@@ -85,13 +88,13 @@ export const faucetApi = {
   },
 
   // Claim tokens
-  claimTokens: async (walletAddress: string, amount: string): Promise<ClaimResponse> => {
+  claimTokens: async (walletAddress: string): Promise<ClaimResponse> => {
     const response = await fetch("/api/faucet/claim", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ walletAddress, amount }),
+      body: JSON.stringify({ walletAddress }),
     });
     if (!response.ok) {
       const error = await response.json();
