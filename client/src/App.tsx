@@ -25,7 +25,7 @@ function FaucetPage({
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold">FOGO Token Faucet</h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Get free FOGO testnet tokens automatically calculated based on your wallet's transaction history. 
+          Get free FOGO testnet tokens through our secure faucet system. 
           Fast, secure, and reliable token distribution.
         </p>
       </div>

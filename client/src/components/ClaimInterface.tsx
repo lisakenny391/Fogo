@@ -212,7 +212,7 @@ export function ClaimInterface({
           {eligibilityStatus !== "idle" && getEligibilityBadge()}
         </CardTitle>
         <CardDescription>
-          Claim FOGO tokens automatically calculated based on your wallet's transaction history
+          Claim FOGO tokens from the testnet faucet
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -133,7 +133,7 @@ export function AddressInput({ onAddressSubmit, currentAddress }: AddressInputPr
           <div className="flex items-start gap-2 text-sm text-muted-foreground">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
             <div>
-              Enter a valid Solana-compatible wallet address. The system will check your transaction history to determine your token allocation.
+              Enter a valid Solana-compatible wallet address. The system will verify your eligibility for token claims.
             </div>
           </div>
 
