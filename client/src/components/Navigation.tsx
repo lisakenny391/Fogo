@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./ThemeToggle";
-import { WalletConnection } from "./WalletConnection";
 import { Droplets, Menu, X, BarChart3, Users, Activity } from "lucide-react";
 import { useLocation } from "wouter";
 

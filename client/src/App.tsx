@@ -6,7 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { Navigation } from "./components/Navigation";
-import { WalletConnection } from "./components/WalletConnection";
+import { AddressInput } from "./components/AddressInput";
 import { ClaimInterface } from "./components/ClaimInterface";
 import { StatsDashboard } from "./components/StatsDashboard";
 import { RecentActivity } from "./components/RecentActivity";
@@ -16,9 +16,7 @@ import { AnalyticsChart } from "./components/AnalyticsChart";
 // Main Faucet Page
 function FaucetPage({ 
   walletAddress, 
-  isWalletConnected, 
-  onWalletConnect, 
-  onWalletDisconnect,
+  onAddressSubmit,
   onClaim 
 }: any) {
   return (
@@ -35,17 +33,23 @@ function FaucetPage({
       {/* Main Interface */}
       <div className="flex justify-center">
         <div className="w-full max-w-md">
-          {!isWalletConnected ? (
-            <WalletConnection 
-              onConnect={onWalletConnect}
-              onDisconnect={onWalletDisconnect}
+          {!walletAddress ? (
+            <AddressInput 
+              onAddressSubmit={onAddressSubmit}
+              currentAddress={walletAddress}
             />
           ) : (
-            <ClaimInterface 
-              walletAddress={walletAddress}
-              isConnected={isWalletConnected}
-              onClaim={onClaim}
-            />
+            <div className="space-y-4">
+              <AddressInput 
+                onAddressSubmit={onAddressSubmit}
+                currentAddress={walletAddress}
+              />
+              <ClaimInterface 
+                walletAddress={walletAddress}
+                isConnected={true}
+                onClaim={onClaim}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -138,15 +142,13 @@ function ActivityPage() {
 }
 
 // Router Component
-function Router({ walletAddress, isWalletConnected, onWalletConnect, onWalletDisconnect, onClaim }: any) {
+function Router({ walletAddress, onAddressSubmit, onClaim }: any) {
   return (
     <Switch>
       <Route path="/">
         <FaucetPage 
           walletAddress={walletAddress}
-          isWalletConnected={isWalletConnected}
-          onWalletConnect={onWalletConnect}
-          onWalletDisconnect={onWalletDisconnect}
+          onAddressSubmit={onAddressSubmit}
           onClaim={onClaim}
         />
       </Route>
@@ -172,22 +174,14 @@ function Router({ walletAddress, isWalletConnected, onWalletConnect, onWalletDis
 // Main App Component
 function App() {
   const [walletAddress, setWalletAddress] = useState<string>("");
-  const [isWalletConnected, setIsWalletConnected] = useState(false);
 
-  const handleWalletConnect = (address: string) => {
+  const handleAddressSubmit = (address: string) => {
     setWalletAddress(address);
-    setIsWalletConnected(true);
-    console.log('Wallet connected:', address); //todo: remove mock functionality
-  };
-
-  const handleWalletDisconnect = () => {
-    setWalletAddress("");
-    setIsWalletConnected(false);
-    console.log('Wallet disconnected'); //todo: remove mock functionality
+    console.log('Address submitted:', address);
   };
 
   const handleClaim = (amount: string) => {
-    console.log('Tokens claimed:', amount); //todo: remove mock functionality
+    console.log('Tokens claimed:', amount);
   };
 
   return (
@@ -197,15 +191,13 @@ function App() {
           <div className="min-h-screen bg-background">
             <Navigation 
               walletAddress={walletAddress}
-              isWalletConnected={isWalletConnected}
-              onWalletConnect={handleWalletConnect}
-              onWalletDisconnect={handleWalletDisconnect}
+              isWalletConnected={!!walletAddress}
+              onWalletConnect={handleAddressSubmit}
+              onWalletDisconnect={() => setWalletAddress("")}
             />
             <Router 
               walletAddress={walletAddress}
-              isWalletConnected={isWalletConnected}
-              onWalletConnect={handleWalletConnect}
-              onWalletDisconnect={handleWalletDisconnect}
+              onAddressSubmit={handleAddressSubmit}
               onClaim={handleClaim}
             />
           </div>
