@@ -8,6 +8,7 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { Navigation } from "./components/Navigation";
 import { AddressInput } from "./components/AddressInput";
 import { ClaimInterface } from "./components/ClaimInterface";
+import { StatsDashboard } from "./components/StatsDashboard";
 import { RecentActivity } from "./components/RecentActivity";
 import { Leaderboard } from "./components/Leaderboard";
 import { AnalyticsChart } from "./components/AnalyticsChart";
@@ -67,6 +68,8 @@ function AnalyticsPage() {
           Comprehensive analytics and insights for the FOGO faucet
         </p>
       </div>
+
+      <StatsDashboard />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AnalyticsChart 
