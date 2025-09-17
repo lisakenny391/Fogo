@@ -13,14 +13,19 @@ export interface IStorage {
   getClaimsByWallet(walletAddress: string): Promise<Claim[]>;
   getRecentClaims(limit?: number): Promise<Claim[]>;
   updateClaimStatus(id: string, status: string, transactionHash?: string): Promise<Claim | undefined>;
+  getPendingClaimsByWallet(walletAddress: string): Promise<Claim[]>;
+  createClaimIfNoPending(claim: InsertClaim): Promise<{ success: boolean; claim?: Claim; error?: string }>;
   
   // Rate limiting operations
   getRateLimit(walletAddress: string): Promise<RateLimit | undefined>;
   createOrUpdateRateLimit(rateLimit: InsertRateLimit): Promise<RateLimit>;
+  snapshotRateLimit(walletAddress: string): Promise<RateLimit | undefined>;
+  restoreRateLimit(snapshot: RateLimit): Promise<void>;
   
   // Faucet configuration
   getFaucetConfig(): Promise<FaucetConfig | undefined>;
   updateFaucetConfig(config: Partial<InsertFaucetConfig>): Promise<FaucetConfig | undefined>;
+  adjustFaucetBalance(delta: number): Promise<{ success: boolean; newBalance?: string; error?: string }>;
   
   // Analytics
   getTotalClaims(): Promise<number>;
@@ -111,22 +116,83 @@ export class MemStorage implements IStorage {
     return undefined;
   }
 
+  async getPendingClaimsByWallet(walletAddress: string): Promise<Claim[]> {
+    return Array.from(this.claims.values()).filter(
+      (claim) => claim.walletAddress.toLowerCase() === walletAddress.toLowerCase() && claim.status === "pending"
+    );
+  }
+
+  async createClaimIfNoPending(insertClaim: InsertClaim): Promise<{ success: boolean; claim?: Claim; error?: string }> {
+    const walletAddress = insertClaim.walletAddress.toLowerCase();
+    
+    // Atomic check for pending claims and create new claim if none exist
+    const existingPendingClaims = Array.from(this.claims.values()).filter(
+      (claim) => claim.walletAddress.toLowerCase() === walletAddress && claim.status === "pending"
+    );
+    
+    if (existingPendingClaims.length > 0) {
+      return { 
+        success: false, 
+        error: "You have a pending claim. Please wait for it to complete before making another claim." 
+      };
+    }
+    
+    // No pending claims, create new one
+    const id = randomUUID();
+    const claim: Claim = {
+      ...insertClaim,
+      id,
+      status: insertClaim.status || "pending",
+      transactionHash: insertClaim.transactionHash || null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.claims.set(id, claim);
+    
+    return { success: true, claim };
+  }
+
   // Rate limiting operations
   async getRateLimit(walletAddress: string): Promise<RateLimit | undefined> {
     return this.rateLimits.get(walletAddress.toLowerCase());
   }
 
   async createOrUpdateRateLimit(insertRateLimit: InsertRateLimit): Promise<RateLimit> {
-    const id = randomUUID();
-    const rateLimit: RateLimit = {
-      ...insertRateLimit,
-      id,
-      lastClaim: new Date(),
-      claimCount: insertRateLimit.claimCount || 1,
-      walletAddress: insertRateLimit.walletAddress.toLowerCase()
-    };
-    this.rateLimits.set(rateLimit.walletAddress, rateLimit);
-    return rateLimit;
+    const walletAddress = insertRateLimit.walletAddress.toLowerCase();
+    const existingRateLimit = this.rateLimits.get(walletAddress);
+    
+    if (existingRateLimit) {
+      // Update existing rate limit
+      const updatedRateLimit: RateLimit = {
+        ...existingRateLimit,
+        lastClaim: new Date(),
+        claimCount: insertRateLimit.claimCount || existingRateLimit.claimCount,
+        resetDate: insertRateLimit.resetDate
+      };
+      this.rateLimits.set(walletAddress, updatedRateLimit);
+      return updatedRateLimit;
+    } else {
+      // Create new rate limit
+      const id = randomUUID();
+      const rateLimit: RateLimit = {
+        ...insertRateLimit,
+        id,
+        lastClaim: new Date(),
+        claimCount: insertRateLimit.claimCount || 1,
+        walletAddress: walletAddress
+      };
+      this.rateLimits.set(walletAddress, rateLimit);
+      return rateLimit;
+    }
+  }
+
+  async snapshotRateLimit(walletAddress: string): Promise<RateLimit | undefined> {
+    const rateLimit = this.rateLimits.get(walletAddress.toLowerCase());
+    return rateLimit ? { ...rateLimit } : undefined; // Return a copy
+  }
+
+  async restoreRateLimit(snapshot: RateLimit): Promise<void> {
+    this.rateLimits.set(snapshot.walletAddress.toLowerCase(), { ...snapshot });
   }
 
   // Faucet configuration
@@ -143,6 +209,28 @@ export class MemStorage implements IStorage {
       };
     }
     return this.faucetConfig;
+  }
+
+  // Atomic balance adjustment to prevent race conditions
+  async adjustFaucetBalance(delta: number): Promise<{ success: boolean; newBalance?: string; error?: string }> {
+    if (!this.faucetConfig) {
+      return { success: false, error: "Faucet configuration not found" };
+    }
+
+    const currentBalance = parseFloat(this.faucetConfig.balance);
+    const newBalance = currentBalance + delta;
+
+    if (newBalance < 0) {
+      return { success: false, error: "Insufficient balance for this operation" };
+    }
+
+    this.faucetConfig = {
+      ...this.faucetConfig,
+      balance: newBalance.toFixed(8),
+      updatedAt: new Date()
+    };
+
+    return { success: true, newBalance: newBalance.toFixed(8) };
   }
 
   // Analytics
