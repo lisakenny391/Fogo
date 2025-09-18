@@ -415,6 +415,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Enhanced unified wallet check endpoint - matches the improved FOGO checker script format
+  app.post("/api/wallet/check", async (req, res) => {
+    try {
+      const { walletAddress } = checkEligibilitySchema.parse(req.body);
+      
+      console.log(`Enhanced wallet check requested for: ${walletAddress}`);
+      
+      try {
+        // Use the new unified checkWallet method with enhanced error handling and retry logic
+        const walletResult = await web3Service.checkWallet(walletAddress);
+        
+        // Return the single object directly for easy faucet integration
+        res.json(walletResult);
+        
+      } catch (error: any) {
+        console.error(`Enhanced wallet check failed for ${walletAddress}:`, error);
+        
+        // Return structured error response
+        res.status(500).json({
+          success: false,
+          error: "Failed to check wallet",
+          details: error.message,
+          wallet: walletAddress
+        });
+      }
+      
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          success: false,
+          error: "Invalid wallet address format",
+          details: error.errors
+        });
+      }
+      console.error("Enhanced wallet check validation error:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "Request validation failed" 
+      });
+    }
+  });
+
+  // Enhanced FOGO balance check endpoint - uses new contract addresses and retry logic
+  app.post("/api/wallet/balances", async (req, res) => {
+    try {
+      const { walletAddress } = checkEligibilitySchema.parse(req.body);
+      
+      console.log(`Enhanced balance check requested for: ${walletAddress}`);
+      
+      try {
+        // Use the enhanced FOGO balance checking method
+        const balanceResult = await web3Service.getEnhancedFogoBalances(walletAddress);
+        
+        res.json({
+          success: true,
+          wallet: walletAddress,
+          balances: balanceResult
+        });
+        
+      } catch (error: any) {
+        console.error(`Enhanced balance check failed for ${walletAddress}:`, error);
+        
+        res.status(500).json({
+          success: false,
+          error: "Failed to check balances",
+          details: error.message,
+          wallet: walletAddress
+        });
+      }
+      
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          success: false,
+          error: "Invalid wallet address format",
+          details: error.errors
+        });
+      }
+      console.error("Enhanced balance check validation error:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "Request validation failed" 
+      });
+    }
+  });
+
   // Get recent claims
   app.get("/api/claims/recent", async (req, res) => {
     try {

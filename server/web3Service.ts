@@ -25,8 +25,14 @@ export class Web3Service {
   private wallet!: Keypair;
   private isInitialized: boolean = false;
   
-  // SPL FOGO token contract address
-  private readonly SPL_FOGO_MINT = "So11111111111111111111111111111111111111112";
+  // FOGO token addresses - enhanced with dual native/contract support
+  private readonly FOGO_NATIVE = "So11111111111111111111111111111111111111112";
+  private readonly FOGO_CONTRACT = "B7mVgAvW7i2wkcDS6WNCmNYi8FTUWBTScJk3vZ55JN4K";
+  private readonly SPL_FOGO_MINT = "So11111111111111111111111111111111111111112"; // Legacy compatibility
+  
+  // Configuration constants
+  private readonly TX_CAP = 3000;
+  private readonly BALANCE_CAP = 10; // 10 FOGO eligibility limit
 
   constructor() {
     // Initialize will be called when needed
@@ -35,20 +41,20 @@ export class Web3Service {
   private initialize() {
     if (this.isInitialized) return;
 
-    // Use correct Fogo RPC URL
-    let fogoRpcUrl = process.env.FOGO_RPC_URL;
-    if (fogoRpcUrl && fogoRpcUrl.includes('explorer.fogo.io')) {
-      fogoRpcUrl = "https://testnet.fogo.io";
-      console.log("Fixed FOGO_RPC_URL to correct RPC endpoint: https://testnet.fogo.io");
-    }
+    // Use enhanced Flux RPC endpoint if available, fallback to default
+    const enhancedFluxRpc = process.env.ENHANCED_FLUX_RPC_URL;
+    const rpcUrl = enhancedFluxRpc || process.env.FOGO_RPC_URL || "https://testnet.fogo.io";
     
-    const rpcUrl = process.env.SOLANA_RPC_URL || fogoRpcUrl || "https://testnet.fogo.io";
+    if (enhancedFluxRpc) {
+      console.log("Using enhanced Flux RPC endpoint for improved reliability");
+    }
     const privateKeyBase58 = process.env.PRIVATE_KEY;
 
     console.log("Initializing Web3Service...");
-    console.log("RPC URL:", rpcUrl);
-    console.log("PRIVATE_KEY exists:", !!privateKeyBase58);
-    console.log("PRIVATE_KEY length:", privateKeyBase58?.length || 0);
+    // Log only safe information to avoid credential exposure
+    const safeRpcDisplay = enhancedFluxRpc ? "[Enhanced Flux RPC]" : new URL(rpcUrl).origin;
+    console.log("RPC endpoint:", safeRpcDisplay);
+    console.log("PRIVATE_KEY configured:", !!privateKeyBase58);
 
     if (!privateKeyBase58) {
       throw new Error("PRIVATE_KEY must be set in environment variables (base58 encoded Solana private key)");
@@ -59,10 +65,10 @@ export class Web3Service {
     }
 
     try {
-      // Initialize connection with aggressive timeout settings
+      // Initialize connection with enhanced timeout settings for Flux RPC
       this.connection = new Connection(rpcUrl, {
         commitment: 'confirmed',
-        confirmTransactionInitialTimeout: 30000, // 30 seconds
+        confirmTransactionInitialTimeout: 60000, // 60 seconds for Flux RPC
         wsEndpoint: undefined, // Disable websockets to reduce hanging connections
         httpHeaders: {
           'User-Agent': 'FOGO-Faucet/1.0'
@@ -74,7 +80,9 @@ export class Web3Service {
       this.wallet = Keypair.fromSecretKey(secretKeyArray);
       
       this.isInitialized = true;
-      console.log("Web3Service initialized with Solana RPC:", rpcUrl);
+      // Log only the hostname to avoid exposing credentials in URLs
+      const safeRpcUrl = enhancedFluxRpc ? "[Enhanced Flux RPC]" : new URL(rpcUrl).origin;
+      console.log("Web3Service initialized with RPC:", safeRpcUrl);
       console.log("Faucet address:", this.wallet.publicKey.toString());
     } catch (error) {
       console.error("Failed to initialize Web3Service:", error);
@@ -101,6 +109,218 @@ export class Web3Service {
       } catch (error) {
         throw new Error("Invalid private key format. Expected base58 string or JSON array of 64 numbers");
       }
+    }
+  }
+
+  // Enhanced retry logic for RPC failures
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000,
+    operationName: string = 'RPC operation'
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        lastError = error;
+        
+        if (attempt === maxRetries) {
+          console.error(`${operationName} failed after ${maxRetries} attempts:`, error.message);
+          throw error;
+        }
+        
+        // Exponential backoff with jitter
+        const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
+        console.warn(`${operationName} attempt ${attempt} failed, retrying in ${Math.round(delay)}ms:`, error.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw lastError!;
+  }
+
+  /**
+   * Enhanced unified wallet checker that combines transaction count and FOGO balances.
+   * Returns comprehensive wallet analysis including cap violation flags.
+   * Based on the improved FOGO checker script with enhanced error handling.
+   */
+  async checkWallet(walletAddress: string): Promise<{
+    wallet: string;
+    transactionCount: number;
+    fogoNative: string;
+    fogoContract: string;
+    totalFogo: string;
+    exceedsCap: boolean;
+    eligible: boolean;
+    exceededType?: string;
+  }> {
+    try {
+      this.initialize();
+      
+      const pubkey = new PublicKey(walletAddress);
+      
+      // Execute all checks concurrently with enhanced error handling
+      const [transactionCount, nativeBalance, contractBalance] = await Promise.all([
+        this.withRetry(
+          () => this.getTransactionCountWithCap(walletAddress),
+          3, 1000, 'Transaction count check'
+        ),
+        this.withRetry(
+          () => this.getNativeFogoBalance(pubkey),
+          3, 1000, 'Native FOGO balance check'
+        ),
+        this.withRetry(
+          () => this.getContractFogoBalance(pubkey),
+          3, 1000, 'Contract FOGO balance check'
+        )
+      ]);
+      
+      const fogoNative = parseFloat(nativeBalance);
+      const fogoContract = parseFloat(contractBalance);
+      const totalFogo = fogoNative + fogoContract;
+      // Determine eligibility and exceeded type - any cap violation makes wallet ineligible
+      let eligible = true;
+      let exceededType: string | undefined;
+      let exceedsCap = false;
+      
+      if (fogoNative > this.BALANCE_CAP) {
+        eligible = false;
+        exceededType = "native";
+        exceedsCap = true;
+      } else if (fogoContract > this.BALANCE_CAP) {
+        eligible = false;
+        exceededType = "contract";
+        exceedsCap = true;
+      } else if (totalFogo > this.BALANCE_CAP) {
+        eligible = false;
+        exceededType = "total";
+        exceedsCap = true;
+      }
+      
+      const result = {
+        wallet: walletAddress,
+        transactionCount,
+        fogoNative: nativeBalance,
+        fogoContract: contractBalance,
+        totalFogo: totalFogo.toString(),
+        exceedsCap,
+        eligible,
+        exceededType
+      };
+      
+      console.log(`Wallet check completed for ${walletAddress}:`, {
+        txCount: transactionCount,
+        nativeFogo: fogoNative,
+        contractFogo: fogoContract,
+        totalFogo,
+        exceedsCap,
+        eligible
+      });
+      
+      return result;
+      
+    } catch (error: any) {
+      console.error(`Enhanced wallet check failed for ${walletAddress}:`, error);
+      throw new Error(`Failed to check wallet: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get transaction count with cap (matches the enhanced script logic).
+   */
+  private async getTransactionCountWithCap(walletAddress: string): Promise<number> {
+    const pubkey = new PublicKey(walletAddress);
+    // Add timeout to prevent hanging
+    const signatures = await Promise.race([
+      this.connection.getSignaturesForAddress(pubkey, {
+        limit: this.TX_CAP,
+      }),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Transaction count check timeout')), 10000)
+      )
+    ]);
+    return signatures.length;
+  }
+
+  /**
+   * Get native FOGO balance (SOL equivalent on Fogo network).
+   */
+  private async getNativeFogoBalance(pubkey: PublicKey): Promise<string> {
+    // Add timeout to prevent hanging
+    const lamports = await Promise.race([
+      this.connection.getBalance(pubkey),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Native balance check timeout')), 10000)
+      )
+    ]);
+    const fogoNative = lamports / LAMPORTS_PER_SOL; // Use constant for consistency
+    return fogoNative.toString();
+  }
+
+  /**
+   * Get contract-based FOGO balance (SPL token).
+   */
+  private async getContractFogoBalance(pubkey: PublicKey): Promise<string> {
+    // Use mint filter for better performance and reliability
+    const fogoContractMint = new PublicKey(this.FOGO_CONTRACT);
+    
+    // Add timeout to prevent hanging
+    const tokenAccounts = await Promise.race([
+      this.connection.getParsedTokenAccountsByOwner(pubkey, {
+        mint: fogoContractMint, // Filter by specific mint for better performance
+      }),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Contract balance check timeout')), 10000)
+      )
+    ]);
+
+    let fogoContract = 0;
+    for (const { account } of tokenAccounts.value) {
+      const info = account.data.parsed.info;
+      const amount = parseFloat(info.tokenAmount.uiAmount || '0');
+      fogoContract += amount;
+    }
+
+    return fogoContract.toString();
+  }
+
+  /**
+   * Enhanced dual FOGO balance check using the new contract addresses.
+   * Maintains backward compatibility while using enhanced RPC endpoint.
+   */
+  async getEnhancedFogoBalances(walletAddress: string): Promise<{
+    fogoNative: string;
+    fogoContract: string;
+    totalFogo: string;
+    exceedsCap: boolean;
+  }> {
+    try {
+      this.initialize();
+      const pubkey = new PublicKey(walletAddress);
+      
+      // Use the enhanced methods with retry logic
+      const [nativeBalance, contractBalance] = await Promise.all([
+        this.withRetry(() => this.getNativeFogoBalance(pubkey), 3, 1000, 'Enhanced native balance'),
+        this.withRetry(() => this.getContractFogoBalance(pubkey), 3, 1000, 'Enhanced contract balance')
+      ]);
+      
+      const fogoNative = parseFloat(nativeBalance);
+      const fogoContract = parseFloat(contractBalance);
+      const totalFogo = fogoNative + fogoContract;
+      const exceedsCap = totalFogo > this.BALANCE_CAP || fogoNative > this.BALANCE_CAP || fogoContract > this.BALANCE_CAP;
+      
+      return {
+        fogoNative: nativeBalance,
+        fogoContract: contractBalance,
+        totalFogo: totalFogo.toString(),
+        exceedsCap
+      };
+    } catch (error: any) {
+      console.error("Error in enhanced FOGO balance check:", error);
+      throw new Error(`Failed to get enhanced FOGO balances: ${error.message}`);
     }
   }
 
@@ -141,12 +361,15 @@ export class Web3Service {
       const publicKey = new PublicKey(walletAddress);
       
       // Add timeout to prevent hanging
-      const balance = await Promise.race([
-        this.connection.getBalance(publicKey),
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Native balance check timeout')), 10000)
-        )
-      ]);
+      const balance = await this.withRetry(
+        () => Promise.race([
+          this.connection.getBalance(publicKey),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Native balance check timeout')), 10000)
+          )
+        ]),
+        3, 1000, 'Legacy native balance check'
+      );
       
       // Convert from lamports to FOGO (native token on Fogo testnet)
       const fogoBalance = (balance / LAMPORTS_PER_SOL).toString();
@@ -214,13 +437,16 @@ export class Web3Service {
       ]);
 
       try {
-        // Get the account info with timeout
-        const account = await Promise.race([
-          getAccount(this.connection, associatedTokenAddress),
-          new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error('SPL account fetch timeout')), 10000)
-          )
-        ]);
+        // Get the account info with timeout and retry
+        const account = await this.withRetry(
+          () => Promise.race([
+            getAccount(this.connection, associatedTokenAddress),
+            new Promise<never>((_, reject) => 
+              setTimeout(() => reject(new Error('SPL account fetch timeout')), 10000)
+            )
+          ]),
+          3, 1000, 'Legacy SPL balance check'
+        );
         
         // Convert balance from smallest units (considering decimals, usually 9 for SPL tokens)
         const balance = Number(account.amount) / Math.pow(10, 9); // Assuming 9 decimals
@@ -321,7 +547,15 @@ export class Web3Service {
   async getFaucetBalance(): Promise<string> {
     try {
       this.initialize();
-      const balance = await this.connection.getBalance(this.wallet.publicKey);
+      const balance = await this.withRetry(
+        () => Promise.race([
+          this.connection.getBalance(this.wallet.publicKey),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Faucet balance check timeout')), 10000)
+          )
+        ]),
+        3, 1000, 'Faucet balance check'
+      );
       const solBalance = (balance / LAMPORTS_PER_SOL).toString();
       return solBalance;
     } catch (error: any) {
@@ -529,7 +763,15 @@ export class Web3Service {
         }
         
         try {
-          const signatures = await this.connection.getSignaturesForAddress(publicKey, options);
+          const signatures = await this.withRetry(
+            () => Promise.race([
+              this.connection.getSignaturesForAddress(publicKey, options),
+              new Promise<never>((_, reject) => 
+                setTimeout(() => reject(new Error('Transaction signature fetch timeout')), 15000)
+              )
+            ]),
+            2, 500, `Transaction signatures page ${pageCount}`
+          );
           
           // Stop when we get zero results (proper end condition)
           if (signatures.length === 0) {
@@ -585,12 +827,28 @@ export class Web3Service {
     try {
       this.initialize();
       
-      // Test RPC connection
-      await this.connection.getSlot();
+      // Test RPC connection with timeout
+      await this.withRetry(
+        () => Promise.race([
+          this.connection.getSlot(),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Health check slot timeout')), 5000)
+          )
+        ]),
+        2, 1000, 'Health check slot'
+      );
       
-      // Test wallet can sign by getting balance
+      // Test wallet can sign by getting balance with timeout
       const faucetAddress = this.wallet.publicKey;
-      await this.connection.getBalance(faucetAddress);
+      await this.withRetry(
+        () => Promise.race([
+          this.connection.getBalance(faucetAddress),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Health check balance timeout')), 5000)
+          )
+        ]),
+        2, 1000, 'Health check balance'
+      );
       
       console.log(`Web3Service health check passed. Faucet address: ${faucetAddress.toString()}`);
       return { isReady: true };
