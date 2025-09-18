@@ -1,15 +1,24 @@
 [build]
-  # Build command - only build the frontend for Netlify
+  # Build command - run vite build from repo root to use correct config
   command = "vite build"
   
-  # Publish directory - where the built frontend files are located
+  # Publish directory - where the built frontend files are located (from vite.config.ts outDir)
   publish = "dist/public"
+  
+  # Functions directory
+  functions = "netlify/functions"
 
 [build.environment]
   # Node.js version for build
   NODE_VERSION = "18"
 
-# SPA redirect rules (backup to _redirects file)
+# API routes redirect to Netlify Functions
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
+# SPA redirect rules for frontend routing (lower priority)
 [[redirects]]
   from = "/*"
   to = "/index.html"

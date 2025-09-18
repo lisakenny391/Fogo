@@ -14,6 +14,7 @@ export interface IStorage {
   
   // Claim operations
   createClaim(claim: InsertClaim): Promise<Claim>;
+  getClaimById(id: string): Promise<Claim | undefined>;
   getClaimsByWallet(walletAddress: string): Promise<Claim[]>;
   getRecentClaims(limit?: number): Promise<Claim[]>;
   updateClaimStatus(id: string, status: string, transactionHash?: string): Promise<Claim | undefined>;
@@ -110,6 +111,11 @@ export class DatabaseStorage implements IStorage {
       status: insertClaim.status || "pending"
     }).returning();
     return claim;
+  }
+
+  async getClaimById(id: string): Promise<Claim | undefined> {
+    const [claim] = await db.select().from(claims).where(eq(claims.id, id));
+    return claim || undefined;
   }
 
   async getClaimsByWallet(walletAddress: string): Promise<Claim[]> {
