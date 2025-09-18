@@ -8,12 +8,8 @@ import { web3Service } from "./web3Service";
 
 // Helper functions for Fogo testnet faucet
 
-const computeProposedAmount = (txCount: number): string => {
-  if (txCount >= 1000) return "3";
-  if (txCount >= 400) return "2";
-  if (txCount >= 80) return "1";
-  return "0.1";
-};
+// DEPRECATED: Removed in favor of storage.getEligibleClaimAmount
+// This function used incorrect tiers - new atomic method implements correct tiers
 
 const getRealWalletBalance = async (address: string): Promise<number> => {
   try {
@@ -44,78 +40,66 @@ const claimTokensSchema = z.object({
   walletAddress: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "Invalid Solana address format"),
 });
 
-// Enhanced eligibility helper with Fogo rules
+// Enhanced eligibility helper with Fogo rules - now uses atomic storage methods
 const isEligibleForClaim = async (walletAddress: string): Promise<{ 
   eligible: boolean; 
   reason?: string; 
   resetTime?: Date; 
   txnCount: number; 
   proposedAmount: string; 
-  balanceExceeded: boolean; 
+  balanceExceeded: boolean;
+  remainingPool?: string;
 }> => {
-  // Get real transaction count and proposed amount
+  // Get real transaction count and wallet balance
   const txnCount = await getRealTransactionCount(walletAddress);
-  const proposedAmount = computeProposedAmount(txnCount);
-  
-  // Check real wallet balance (10 FOGO maximum)
   const walletBalance = await getRealWalletBalance(walletAddress);
+  
+  // Use storage method for correct tier calculation and daily pool checks
+  const eligibilityResult = await storage.getEligibleClaimAmount(txnCount, walletBalance.toString());
+  const poolStatus = await storage.getRemainingDailyPool();
+  
   const balanceExceeded = walletBalance > 10;
   
-  if (balanceExceeded) {
+  if (!eligibilityResult.eligible) {
     return {
       eligible: false,
-      reason: "Wallet balance exceeds 10 FOGO",
+      reason: eligibilityResult.reason,
       txnCount,
-      proposedAmount,
-      balanceExceeded: true
+      proposedAmount: eligibilityResult.amount,
+      balanceExceeded,
+      remainingPool: poolStatus.remaining
     };
   }
 
-  // Check for pending claims first to prevent concurrent claims
-  const pendingClaims = await storage.getPendingClaimsByWallet(walletAddress);
-  if (pendingClaims.length > 0) {
-    return { 
-      eligible: false, 
-      reason: "You have a pending claim. Please wait for it to complete before making another claim.",
-      txnCount,
-      proposedAmount,
-      balanceExceeded: false
-    };
-  }
-
+  // Check for pending claims (redundant check as storage method handles this, but kept for rate limiting)
   const rateLimit = await storage.getRateLimit(walletAddress);
   const now = new Date();
   
-  if (!rateLimit) {
-    return { 
-      eligible: true, 
-      txnCount, 
-      proposedAmount, 
-      balanceExceeded: false 
-    };
-  }
-  
-  // Check if 24 hours have passed since last claim
-  const timeSinceLastClaim = now.getTime() - rateLimit.lastClaim.getTime();
-  const twentyFourHours = 24 * 60 * 60 * 1000;
-  
-  if (timeSinceLastClaim < twentyFourHours) {
-    const resetTime = new Date(rateLimit.lastClaim.getTime() + twentyFourHours);
-    return { 
-      eligible: false, 
-      reason: "Daily limit reached. Please wait 24 hours between claims.",
-      resetTime,
-      txnCount,
-      proposedAmount,
-      balanceExceeded: false
-    };
+  if (rateLimit) {
+    // Check if 24 hours have passed since last claim
+    const timeSinceLastClaim = now.getTime() - rateLimit.lastClaim.getTime();
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    
+    if (timeSinceLastClaim < twentyFourHours) {
+      const resetTime = new Date(rateLimit.lastClaim.getTime() + twentyFourHours);
+      return { 
+        eligible: false, 
+        reason: "Daily limit reached. Please wait 24 hours between claims.",
+        resetTime,
+        txnCount,
+        proposedAmount: eligibilityResult.amount,
+        balanceExceeded: false,
+        remainingPool: poolStatus.remaining
+      };
+    }
   }
   
   return { 
     eligible: true, 
     txnCount, 
-    proposedAmount, 
-    balanceExceeded: false 
+    proposedAmount: eligibilityResult.amount, 
+    balanceExceeded: false,
+    remainingPool: poolStatus.remaining
   };
 };
 
@@ -191,7 +175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Claim tokens endpoint
+  // Claim tokens endpoint - now uses atomic processing
   app.post("/api/faucet/claim", async (req, res) => {
     try {
       const { walletAddress } = claimTokensSchema.parse(req.body);
@@ -201,115 +185,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Faucet is currently inactive" });
       }
       
-      // Check eligibility and get computed amount
-      const eligibility = await isEligibleForClaim(walletAddress);
+      // Get real wallet data for atomic processing
+      const txnCount = await getRealTransactionCount(walletAddress);
+      const walletBalance = await getRealWalletBalance(walletAddress);
       
-      if (!eligibility.eligible) {
-        return res.status(400).json({ error: eligibility.reason || "Not eligible to claim" });
-      }
-      
-      // Use server-computed amount
-      const amount = eligibility.proposedAmount;
-      const requestedAmount = parseFloat(amount);
-      
-      // Check faucet balance
-      const currentBalance = parseFloat(config.balance);
-      if (currentBalance < requestedAmount) {
-        return res.status(400).json({ error: "Insufficient faucet balance" });
-      }
-      
-      // Atomically create claim if no pending claims exist
-      const claimResult = await storage.createClaimIfNoPending({
+      // Use atomic claim processing with correct tiers and daily pool management
+      const claimResult = await storage.processClaimAtomic({
         walletAddress,
-        amount,
+        amount: "0", // Will be computed atomically by processClaimAtomic
         status: "pending"
-      });
+      }, txnCount, walletBalance.toString());
       
       if (!claimResult.success) {
         return res.status(400).json({ error: claimResult.error });
       }
       
       const claim = claimResult.claim!;
+      const claimedAmount = claim.amount;
       
-      // Process real blockchain transaction
+      // Return success immediately with claim info, then process blockchain transaction asynchronously
+      res.json({ 
+        claimId: claim.id, 
+        amount: claimedAmount,
+        remaining: claimResult.remaining || "0",
+        message: "Claim created successfully. Blockchain transaction processing..." 
+      });
+      
+      // Process real blockchain transaction asynchronously
       setTimeout(async () => {
-        let balanceAdjusted = false;
-        let rateLimitSnapshot: any = null;
-        let rateLimitUpdated = false;
         let transactionHash: string | null = null;
         
         try {
-          // Send real blockchain transaction
-          transactionHash = await web3Service.sendTokens(walletAddress, amount);
+          // Send real blockchain transaction using the amount from the atomic claim
+          transactionHash = await web3Service.sendTokens(walletAddress, claimedAmount);
           console.log(`Real blockchain transaction sent: ${transactionHash}`);
           
-          // Step 1: Atomically adjust faucet balance (negative delta to deduct)
-          const balanceResult = await storage.adjustFaucetBalance(-requestedAmount);
-          if (!balanceResult.success) {
-            throw new Error(balanceResult.error || "Failed to adjust faucet balance");
-          }
-          balanceAdjusted = true;
-          
-          // Step 2: Snapshot rate limit for potential rollback, then update
-          rateLimitSnapshot = await storage.snapshotRateLimit(walletAddress);
-          
-          const existingRateLimit = await storage.getRateLimit(walletAddress);
-          const now = new Date();
-          const resetDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-          
-          let newClaimCount = 1;
-          if (existingRateLimit) {
-            // Reset count if 24 hours have passed, otherwise increment
-            const timeSinceLastClaim = now.getTime() - existingRateLimit.lastClaim.getTime();
-            const twentyFourHours = 24 * 60 * 60 * 1000;
-            newClaimCount = timeSinceLastClaim >= twentyFourHours ? 1 : existingRateLimit.claimCount + 1;
-          }
-          
-          await storage.createOrUpdateRateLimit({
-            walletAddress,
-            claimCount: newClaimCount,
-            resetDate
-          });
-          rateLimitUpdated = true;
-          
-          // Step 3: Mark claim as successful (final step)
-          await storage.updateClaimStatus(claim.id, "success", transactionHash);
+          // Finalize claim as successful with proper rate limit updates
+          await storage.finalizeClaim(claim.id, { success: true, txHash: transactionHash });
           
           console.log(`Claim ${claim.id} completed successfully with blockchain tx: ${transactionHash}`);
         } catch (error) {
           console.error(`Failed to complete claim ${claim.id}:`, error);
           
-          // Rollback operations in reverse order
-          if (rateLimitUpdated && rateLimitSnapshot) {
-            try {
-              await storage.restoreRateLimit(rateLimitSnapshot);
-              console.log(`Rolled back rate limit for failed claim ${claim.id}`);
-            } catch (rollbackError) {
-              console.error(`Critical: Failed to rollback rate limit for claim ${claim.id}:`, rollbackError);
-            }
-          }
-          
-          if (balanceAdjusted) {
-            // Rollback balance adjustment
-            try {
-              await storage.adjustFaucetBalance(requestedAmount); // Add back the amount
-              console.log(`Rolled back balance adjustment for failed claim ${claim.id}`);
-            } catch (rollbackError) {
-              console.error(`Critical: Failed to rollback balance for claim ${claim.id}:`, rollbackError);
-            }
-          }
-          
-          // Mark claim as failed
-          await storage.updateClaimStatus(claim.id, "failed");
+          // Finalize claim as failed with compensation to restore daily pool
+          await storage.finalizeClaim(claim.id, { success: false, txHash: transactionHash });
         }
-      }, 2000); // 2 second delay to simulate blockchain processing
-      
-      res.json({
-        claimId: claim.id,
-        status: "pending",
-        amount: requestedAmount,
-        message: "Claim submitted successfully. Processing on blockchain..."
-      });
+      }, 100); // Small delay to process blockchain transaction
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid request format" });

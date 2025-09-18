@@ -30,6 +30,15 @@ export interface IStorage {
   updateFaucetConfig(config: Partial<InsertFaucetConfig>): Promise<FaucetConfig | undefined>;
   adjustFaucetBalance(delta: number): Promise<{ success: boolean; newBalance?: string; error?: string }>;
   
+  // Daily pool management
+  getRemainingDailyPool(): Promise<{ remaining: string; total: string; isExhausted: boolean }>;
+  updateDailyDistributed(amount: string): Promise<{ success: boolean; remaining?: string; error?: string }>;
+  getEligibleClaimAmount(transactionCount: number, walletBalance: string): Promise<{ amount: string; eligible: boolean; reason?: string }>;
+  
+  // Atomic claim processing
+  processClaimAtomic(claim: InsertClaim, transactionCount: number, walletBalance: string): Promise<{ success: boolean; claim?: Claim; remaining?: string; error?: string }>;
+  finalizeClaim(claimId: string, outcome: { success: boolean; txHash?: string | null }): Promise<{ success: boolean; error?: string }>;
+  
   // Wallet eligibility operations
   getWalletEligibility(walletAddress: string): Promise<WalletEligibility | undefined>;
   upsertWalletEligibility(eligibility: InsertWalletEligibility): Promise<WalletEligibility>;
@@ -51,12 +60,15 @@ export class DatabaseStorage implements IStorage {
     // Query directly to avoid infinite recursion
     const [existing] = await db.select().from(faucetConfig).limit(1);
     if (!existing) {
+      const now = new Date();
       await db.insert(faucetConfig).values({
         balance: "1000000",
-        dailyLimit: "100",
+        dailyLimit: "300", // Updated to 300 FOGO
+        dailyDistributed: "0",
+        dailyResetDate: now,
         isActive: true,
-        lastRefill: new Date(),
-        updatedAt: new Date()
+        lastRefill: now,
+        updatedAt: now
       });
     }
   }
@@ -354,6 +366,316 @@ export class DatabaseStorage implements IStorage {
       claims: result.claimCount,
       users: result.userCount
     }));
+  }
+  
+  // Daily pool management methods
+  async getRemainingDailyPool(): Promise<{ remaining: string; total: string; isExhausted: boolean }> {
+    // Use SQL arithmetic to calculate remaining pool precisely with proper UTC reset logic
+    const now = new Date();
+    const [result] = await db.select({
+      remaining: sql<string>`GREATEST(
+        CAST(${faucetConfig.dailyLimit} AS DECIMAL) - CASE 
+          WHEN date_trunc('day', ${faucetConfig.dailyResetDate} AT TIME ZONE 'UTC') < date_trunc('day', ${now} AT TIME ZONE 'UTC')
+          THEN 0 
+          ELSE CAST(${faucetConfig.dailyDistributed} AS DECIMAL)
+        END, 0
+      )`,
+      total: faucetConfig.dailyLimit
+    }).from(faucetConfig).limit(1);
+    
+    if (!result) {
+      return { remaining: "0", total: "300", isExhausted: true };
+    }
+    
+    const remainingAmount = parseFloat(result.remaining);
+    
+    return {
+      remaining: remainingAmount.toFixed(8),
+      total: result.total,
+      isExhausted: remainingAmount <= 0
+    };
+  }
+  
+  
+  // DEPRECATED: Use processClaimAtomic instead for atomic operations
+  async updateDailyDistributed(amount: string): Promise<{ success: boolean; remaining?: string; error?: string }> {
+    // This method is deprecated in favor of processClaimAtomic for better atomicity
+    return { success: false, error: "Use processClaimAtomic for atomic claim processing" };
+  }
+  
+  async getEligibleClaimAmount(transactionCount: number, walletBalance: string): Promise<{ amount: string; eligible: boolean; reason?: string }> {
+    // Check wallet balance restriction (>10 FOGO cannot claim)
+    const balance = parseFloat(walletBalance);
+    if (balance > 10) {
+      return {
+        amount: "0",
+        eligible: false,
+        reason: "Wallet balance exceeds 10 FOGO limit"
+      };
+    }
+    
+    // Transaction-based claim scaling
+    let claimAmount: string;
+    
+    if (transactionCount < 70) {
+      return {
+        amount: "0",
+        eligible: false,
+        reason: "Wallet needs at least 70 transactions to claim"
+      };
+    } else if (transactionCount >= 70 && transactionCount < 160) {
+      claimAmount = "0.2";
+    } else if (transactionCount >= 160 && transactionCount < 400) {
+      claimAmount = "0.5";
+    } else if (transactionCount >= 400 && transactionCount < 1000) {
+      claimAmount = "1.0";
+    } else if (transactionCount >= 1000 && transactionCount < 1500) {
+      claimAmount = "1.5";
+    } else if (transactionCount >= 1500 && transactionCount < 3000) {
+      claimAmount = "2.0";
+    } else { // 3000+
+      claimAmount = "3.0";
+    }
+    
+    // Use SQL to atomically check pool and calculate final amount
+    const [result] = await db.select({
+      remaining: sql<string>`GREATEST(CAST(${faucetConfig.dailyLimit} AS DECIMAL) - CAST(${faucetConfig.dailyDistributed} AS DECIMAL), 0)`,
+      finalAmount: sql<string>`LEAST(CAST(${claimAmount} AS DECIMAL), GREATEST(CAST(${faucetConfig.dailyLimit} AS DECIMAL) - CAST(${faucetConfig.dailyDistributed} AS DECIMAL), 0))`
+    }).from(faucetConfig).limit(1);
+    
+    if (!result) {
+      return {
+        amount: "0",
+        eligible: false,
+        reason: "Faucet configuration not found"
+      };
+    }
+    
+    const remainingPool = parseFloat(result.remaining);
+    const finalAmount = parseFloat(result.finalAmount);
+    
+    if (remainingPool <= 0) {
+      return {
+        amount: "0",
+        eligible: false,
+        reason: "Target has reached. Try again tomorrow."
+      };
+    }
+    
+    return {
+      amount: finalAmount.toFixed(8),
+      eligible: true
+    };
+  }
+  
+  // Atomic claim processing - handles entire claim operation in single transaction with full SQL arithmetic
+  async processClaimAtomic(insertClaim: InsertClaim, transactionCount: number, walletBalance: string): Promise<{ success: boolean; claim?: Claim; remaining?: string; error?: string }> {
+    // Validate input constraints before transaction
+    if (parseFloat(walletBalance) > 10) {
+      return { success: false, error: "Wallet balance exceeds 10 FOGO limit" };
+    }
+    
+    if (transactionCount < 70) {
+      return { success: false, error: "Wallet needs at least 70 transactions to claim" };
+    }
+    
+    // Calculate base claim amount based on transaction count
+    let baseClaimAmount: string;
+    if (transactionCount >= 70 && transactionCount < 160) {
+      baseClaimAmount = "0.2";
+    } else if (transactionCount >= 160 && transactionCount < 400) {
+      baseClaimAmount = "0.5";
+    } else if (transactionCount >= 400 && transactionCount < 1000) {
+      baseClaimAmount = "1.0";
+    } else if (transactionCount >= 1000 && transactionCount < 1500) {
+      baseClaimAmount = "1.5";
+    } else if (transactionCount >= 1500 && transactionCount < 3000) {
+      baseClaimAmount = "2.0";
+    } else { // 3000+
+      baseClaimAmount = "3.0";
+    }
+    
+    // Start atomic transaction
+    return await db.transaction(async (tx) => {
+      const now = new Date();
+      
+      // We will rely on the unique constraint to prevent duplicate pending claims when inserting
+      
+      // Atomic CTE: Lock config row, check/reset daily pool, compute awarded amount, update distributed, and return all needed values
+      const result = await tx.execute(sql`
+        WITH config_update AS (
+          SELECT 
+            id,
+            balance,
+            daily_limit,
+            daily_distributed,
+            daily_reset_date,
+            -- Check if we need to reset (UTC midnight comparison)
+            CASE 
+              WHEN date_trunc('day', daily_reset_date AT TIME ZONE 'UTC') < date_trunc('day', ${now} AT TIME ZONE 'UTC')
+              THEN 0 -- Reset distributed amount
+              ELSE daily_distributed
+            END as current_distributed,
+            -- Calculate the award amount (base claim capped by remaining pool)
+            LEAST(
+              CAST(${baseClaimAmount} AS DECIMAL),
+              GREATEST(
+                daily_limit - CASE 
+                  WHEN date_trunc('day', daily_reset_date AT TIME ZONE 'UTC') < date_trunc('day', ${now} AT TIME ZONE 'UTC')
+                  THEN 0 
+                  ELSE daily_distributed
+                END,
+                0
+              )
+            ) as awarded_amount
+          FROM ${faucetConfig}
+          FOR UPDATE -- Lock the row to prevent concurrency issues
+        ),
+        balance_check AS (
+          SELECT *
+          FROM config_update
+          WHERE 
+            balance >= awarded_amount -- Ensure sufficient faucet balance
+            AND awarded_amount > 0 -- Ensure there's something to award
+        ),
+        faucet_update AS (
+          UPDATE ${faucetConfig}
+          SET 
+            daily_distributed = balance_check.current_distributed + balance_check.awarded_amount,
+            daily_reset_date = CASE 
+              WHEN balance_check.current_distributed = 0 -- If we reset
+              THEN date_trunc('day', ${now} AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+              ELSE daily_reset_date
+            END,
+            balance = balance - balance_check.awarded_amount,
+            updated_at = ${now}
+          FROM balance_check
+          WHERE ${faucetConfig}.id = balance_check.id
+          RETURNING 
+            balance_check.awarded_amount,
+            daily_limit - (balance_check.current_distributed + balance_check.awarded_amount) as remaining_pool,
+            daily_limit,
+            daily_distributed,
+            balance
+        )
+        SELECT 
+          awarded_amount,
+          remaining_pool,
+          daily_limit,
+          daily_distributed,
+          balance
+        FROM faucet_update
+      `);
+      
+      const claimResult = result.rows[0];
+      if (!claimResult || !claimResult.awarded_amount || parseFloat(claimResult.awarded_amount as string) <= 0) {
+        throw new Error("Target has reached. Try again tomorrow.");
+      }
+      
+      const awardedAmount = claimResult.awarded_amount as string;
+      const remainingPool = claimResult.remaining_pool as string;
+      
+      // Create the claim record with the exact awarded amount from SQL
+      // This will fail if there's already a pending claim due to the unique constraint
+      const [newClaim] = await tx.insert(claims).values({
+        ...insertClaim,
+        amount: awardedAmount,
+        status: insertClaim.status || "pending"
+      }).returning();
+      
+      return {
+        success: true,
+        claim: newClaim,
+        remaining: parseFloat(remainingPool).toFixed(8)
+      };
+    }).catch((error) => {
+      // Handle database constraint violations gracefully
+      if (error.message?.includes("unique_pending_per_wallet") || error.code === '23505') {
+        return {
+          success: false,
+          error: "You have a pending claim. Please wait for it to complete before making another claim."
+        };
+      }
+      
+      return {
+        success: false,
+        error: error.message || "Transaction failed"
+      };
+    });
+  }
+
+  async finalizeClaim(claimId: string, outcome: { success: boolean; txHash?: string | null }): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await db.transaction(async (tx) => {
+        // Idempotent update: only update if status is still pending
+        const [claim] = await tx.update(claims).set({
+          status: outcome.success ? "success" : "failed",
+          transactionHash: outcome.txHash,
+          updatedAt: new Date()
+        }).where(and(
+          eq(claims.id, claimId),
+          eq(claims.status, "pending")
+        )).returning();
+
+        if (!claim) {
+          // Claim not found or already finalized - idempotent success
+          return { success: true };
+        }
+
+        const claimAmount = parseFloat(claim.amount);
+
+        if (outcome.success) {
+          // Update rate limit (create or reset for 24h window)
+          const now = new Date();
+          const resetDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+          
+          const [existingRateLimit] = await tx.select().from(rateLimits)
+            .where(eq(rateLimits.walletAddress, claim.walletAddress));
+
+          if (existingRateLimit) {
+            const timeSinceLastClaim = now.getTime() - existingRateLimit.lastClaim.getTime();
+            const twentyFourHours = 24 * 60 * 60 * 1000;
+            const newClaimCount = timeSinceLastClaim >= twentyFourHours ? 1 : existingRateLimit.claimCount + 1;
+
+            await tx.update(rateLimits).set({
+              claimCount: newClaimCount,
+              lastClaim: now,
+              resetDate,
+              updatedAt: now
+            }).where(eq(rateLimits.walletAddress, claim.walletAddress));
+          } else {
+            await tx.insert(rateLimits).values({
+              walletAddress: claim.walletAddress,
+              claimCount: 1,
+              lastClaim: now,
+              resetDate,
+              createdAt: now,
+              updatedAt: now
+            });
+          }
+
+          return { success: true };
+        } else {
+          // On failure, compensate by restoring the daily pool and balance
+          await tx.execute(sql`
+            UPDATE ${faucetConfig} 
+            SET 
+              balance = balance + ${claimAmount},
+              daily_distributed = GREATEST(daily_distributed - ${claimAmount}, 0),
+              updated_at = ${new Date()}
+            WHERE id = (SELECT id FROM ${faucetConfig} LIMIT 1)
+          `);
+
+          return { success: true };
+        }
+      });
+    } catch (error) {
+      console.error("Failed to finalize claim:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to finalize claim"
+      };
+    }
   }
 }
 

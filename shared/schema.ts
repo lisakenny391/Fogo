@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, decimal, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, decimal, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -20,13 +20,18 @@ export const claims = pgTable("claims", {
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Unique partial index to prevent duplicate pending claims per wallet (database-enforced)
+  uniquePendingPerWallet: uniqueIndex("unique_pending_per_wallet").on(sql`LOWER(${table.walletAddress})`).where(sql`${table.status} = 'pending'`),
+}));
 
 // Faucet configuration and status
 export const faucetConfig = pgTable("faucet_config", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   balance: decimal("balance", { precision: 18, scale: 8 }).notNull().default("1000000"), // 1M FOGO
-  dailyLimit: decimal("daily_limit", { precision: 18, scale: 8 }).notNull().default("100"), // 100 FOGO per day
+  dailyLimit: decimal("daily_limit", { precision: 18, scale: 8 }).notNull().default("300"), // 300 FOGO per day
+  dailyDistributed: decimal("daily_distributed", { precision: 18, scale: 8 }).notNull().default("0"), // Amount distributed today
+  dailyResetDate: timestamp("daily_reset_date", { withTimezone: true }).defaultNow().notNull(), // When the daily pool resets (UTC)
   isActive: boolean("is_active").notNull().default(true),
   lastRefill: timestamp("last_refill").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -39,7 +44,10 @@ export const rateLimits = pgTable("rate_limits", {
   lastClaim: timestamp("last_claim").defaultNow().notNull(),
   claimCount: integer("claim_count").notNull().default(1),
   resetDate: timestamp("reset_date").notNull(),
-});
+}, (table) => ({
+  // Index on wallet address for rate limiting lookups
+  walletAddressIdx: index("rate_limits_address_idx").on(sql`LOWER(${table.walletAddress})`),
+}));
 
 // Wallet eligibility table for cooldowns and tracking
 export const walletEligibility = pgTable("wallet_eligibility", {
@@ -49,7 +57,10 @@ export const walletEligibility = pgTable("wallet_eligibility", {
   transactionCount: integer("transaction_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Index on wallet address for faster lookups
+  walletAddressIdx: index("wallet_eligibility_address_idx").on(sql`LOWER(${table.walletAddress})`),
+}));
 
 // Create insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -65,10 +76,10 @@ export const insertClaimSchema = createInsertSchema(claims).pick({
   ipAddress: true,
 });
 
-export const insertFaucetConfigSchema = createInsertSchema(faucetConfig).pick({
-  balance: true,
-  dailyLimit: true,
-  isActive: true,
+export const insertFaucetConfigSchema = createInsertSchema(faucetConfig).omit({
+  id: true,
+  lastRefill: true,
+  updatedAt: true,
 });
 
 export const insertRateLimitSchema = createInsertSchema(rateLimits).pick({
