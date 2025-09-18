@@ -262,7 +262,7 @@ export class DatabaseStorage implements IStorage {
       // Perform atomic update with balance check in SQL
       const [updatedConfig] = await db.update(faucetConfig)
         .set({
-          balance: sql`CAST(balance AS DECIMAL) + ${delta}`,
+          balance: sql`balance + CAST(${delta} AS DECIMAL)`,
           updatedAt: new Date()
         })
         .where(sql`CAST(balance AS DECIMAL) + ${delta} >= 0`) // Ensure non-negative balance
@@ -425,13 +425,13 @@ export class DatabaseStorage implements IStorage {
         CAST(${envDailyLimitStr} AS DECIMAL) - CASE 
           WHEN date_trunc('day', ${faucetConfig.dailyResetDate} AT TIME ZONE 'UTC') < date_trunc('day', ${now} AT TIME ZONE 'UTC')
           THEN 0 
-          ELSE CAST(${faucetConfig.dailyDistributed} AS DECIMAL)
+          ELSE ${faucetConfig.dailyDistributed}
         END, 0
       )`,
       distributed: sql<string>`CASE 
         WHEN date_trunc('day', ${faucetConfig.dailyResetDate} AT TIME ZONE 'UTC') < date_trunc('day', ${now} AT TIME ZONE 'UTC')
         THEN 0 
-        ELSE CAST(${faucetConfig.dailyDistributed} AS DECIMAL)
+        ELSE ${faucetConfig.dailyDistributed}
       END`
     }).from(faucetConfig).limit(1);
     
@@ -496,8 +496,8 @@ export class DatabaseStorage implements IStorage {
     
     // Use SQL to atomically check pool and calculate final amount
     const [result] = await db.select({
-      remaining: sql<string>`GREATEST(CAST(${envDailyLimitStr} AS DECIMAL) - CAST(${faucetConfig.dailyDistributed} AS DECIMAL), 0)`,
-      finalAmount: sql<string>`LEAST(CAST(${claimAmount} AS DECIMAL), GREATEST(CAST(${envDailyLimitStr} AS DECIMAL) - CAST(${faucetConfig.dailyDistributed} AS DECIMAL), 0))`
+      remaining: sql<string>`GREATEST(CAST(${envDailyLimitStr} AS DECIMAL) - ${faucetConfig.dailyDistributed}, 0)`,
+      finalAmount: sql<string>`LEAST(CAST(${claimAmount} AS DECIMAL), GREATEST(CAST(${envDailyLimitStr} AS DECIMAL) - ${faucetConfig.dailyDistributed}, 0))`
     }).from(faucetConfig).limit(1);
     
     if (!result) {
