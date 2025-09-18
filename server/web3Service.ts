@@ -7,6 +7,7 @@ import {
   Transaction,
   sendAndConfirmTransaction 
 } from "@solana/web3.js";
+import { getAccount, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import bs58 from "bs58";
 import { createHash } from "crypto";
 
@@ -14,6 +15,9 @@ export class Web3Service {
   private connection!: Connection;
   private wallet!: Keypair;
   private isInitialized: boolean = false;
+  
+  // SPL FOGO token contract address
+  private readonly SPL_FOGO_MINT = "So11111111111111111111111111111111111111112";
 
   constructor() {
     // Initialize will be called when needed
@@ -88,12 +92,81 @@ export class Web3Service {
       this.initialize();
       const publicKey = new PublicKey(walletAddress);
       const balance = await this.connection.getBalance(publicKey);
-      // Convert from lamports to SOL
-      const solBalance = (balance / LAMPORTS_PER_SOL).toString();
-      return solBalance;
+      // Convert from lamports to FOGO (native token on Fogo testnet)
+      const fogoBalance = (balance / LAMPORTS_PER_SOL).toString();
+      return fogoBalance;
     } catch (error: any) {
       console.error("Error getting wallet balance:", error);
       throw new Error(`Failed to get wallet balance: ${error.message}`);
+    }
+  }
+
+  async getSplFogoBalance(walletAddress: string): Promise<string> {
+    try {
+      this.initialize();
+      const walletPublicKey = new PublicKey(walletAddress);
+      const splFogoMint = new PublicKey(this.SPL_FOGO_MINT);
+
+      // Get the associated token account address
+      const associatedTokenAddress = await getAssociatedTokenAddress(
+        splFogoMint,
+        walletPublicKey
+      );
+
+      try {
+        // Get the account info
+        const account = await getAccount(this.connection, associatedTokenAddress);
+        // Convert balance from smallest units (considering decimals, usually 9 for SPL tokens)
+        const balance = Number(account.amount) / Math.pow(10, 9); // Assuming 9 decimals
+        return balance.toString();
+      } catch (error) {
+        // Account doesn't exist, so balance is 0
+        return "0";
+      }
+    } catch (error: any) {
+      console.error("Error getting SPL FOGO balance:", error);
+      throw new Error(`Failed to get SPL FOGO balance: ${error.message}`);
+    }
+  }
+
+  async checkDualFogoBalance(walletAddress: string, maxBalance: number = 10): Promise<{ 
+    eligible: boolean; 
+    nativeFogo: string; 
+    splFogo: string; 
+    totalFogo: string;
+    exceededType?: string;
+  }> {
+    try {
+      // Get both native FOGO and SPL FOGO balances
+      const nativeFogoBalance = await this.getWalletBalance(walletAddress);
+      const splFogoBalance = await this.getSplFogoBalance(walletAddress);
+
+      const nativeFogo = parseFloat(nativeFogoBalance);
+      const splFogo = parseFloat(splFogoBalance);
+      const totalFogo = nativeFogo + splFogo;
+
+      // Check if either balance exceeds the threshold
+      let eligible = true;
+      let exceededType: string | undefined;
+
+      if (nativeFogo > maxBalance) {
+        eligible = false;
+        exceededType = "native";
+      } else if (splFogo > maxBalance) {
+        eligible = false;
+        exceededType = "spl";
+      }
+
+      return {
+        eligible,
+        nativeFogo: nativeFogoBalance,
+        splFogo: splFogoBalance,
+        totalFogo: totalFogo.toString(),
+        exceededType
+      };
+    } catch (error: any) {
+      console.error("Error checking dual FOGO balance:", error);
+      throw new Error(`Failed to check FOGO balances: ${error.message}`);
     }
   }
 

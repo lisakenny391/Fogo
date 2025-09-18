@@ -22,6 +22,22 @@ const getRealWalletBalance = async (address: string): Promise<number> => {
   }
 };
 
+const checkDualFogoEligibility = async (address: string): Promise<{
+  eligible: boolean;
+  nativeFogo: string;
+  splFogo: string; 
+  totalFogo: string;
+  exceededType?: string;
+}> => {
+  try {
+    return await web3Service.checkDualFogoBalance(address, 10);
+  } catch (error) {
+    console.error("Failed to check dual FOGO balance - RPC unavailable:", error);
+    // Security: Don't allow claims if we can't verify blockchain balance
+    throw new Error("Unable to verify FOGO token balances - blockchain RPC unavailable");
+  }
+};
+
 const getRealTransactionCount = async (address: string): Promise<number> => {
   try {
     return await web3Service.getTransactionCount(address);
@@ -40,7 +56,7 @@ const claimTokensSchema = z.object({
   walletAddress: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "Invalid Solana address format"),
 });
 
-// Enhanced eligibility helper with Fogo rules - now uses atomic storage methods
+// Enhanced eligibility helper with Fogo rules - now uses dual FOGO balance checking
 const isEligibleForClaim = async (walletAddress: string): Promise<{ 
   eligible: boolean; 
   reason?: string; 
@@ -49,25 +65,53 @@ const isEligibleForClaim = async (walletAddress: string): Promise<{
   proposedAmount: string; 
   balanceExceeded: boolean;
   remainingPool?: string;
+  nativeFogo?: string;
+  splFogo?: string;
+  totalFogo?: string;
+  exceededType?: string;
 }> => {
-  // Get real transaction count and wallet balance
+  // Get real transaction count and dual FOGO balance check
   const txnCount = await getRealTransactionCount(walletAddress);
-  const walletBalance = await getRealWalletBalance(walletAddress);
+  const dualBalanceCheck = await checkDualFogoEligibility(walletAddress);
+  
+  // Use native FOGO balance for legacy storage compatibility
+  const walletBalance = parseFloat(dualBalanceCheck.nativeFogo);
   
   // Use storage method for correct tier calculation and daily pool checks
   const eligibilityResult = await storage.getEligibleClaimAmount(txnCount, walletBalance.toString());
   const poolStatus = await storage.getRemainingDailyPool();
   
-  const balanceExceeded = walletBalance > 10;
+  // Check if either native or SPL FOGO balance exceeds 10
+  const balanceExceeded = !dualBalanceCheck.eligible;
   
+  // First check if dual balance check failed (either token type exceeds 10)
+  if (balanceExceeded) {
+    const balanceType = dualBalanceCheck.exceededType === "native" ? "native FOGO" : "SPL FOGO";
+    return {
+      eligible: false,
+      reason: `Wallet ${balanceType} balance exceeds 10 tokens`,
+      txnCount,
+      proposedAmount: "0",
+      balanceExceeded: true,
+      remainingPool: poolStatus.remaining,
+      nativeFogo: dualBalanceCheck.nativeFogo,
+      splFogo: dualBalanceCheck.splFogo,
+      totalFogo: dualBalanceCheck.totalFogo,
+      exceededType: dualBalanceCheck.exceededType
+    };
+  }
+
   if (!eligibilityResult.eligible) {
     return {
       eligible: false,
       reason: eligibilityResult.reason,
       txnCount,
       proposedAmount: eligibilityResult.amount,
-      balanceExceeded,
-      remainingPool: poolStatus.remaining
+      balanceExceeded: false,
+      remainingPool: poolStatus.remaining,
+      nativeFogo: dualBalanceCheck.nativeFogo,
+      splFogo: dualBalanceCheck.splFogo,
+      totalFogo: dualBalanceCheck.totalFogo
     };
   }
 
@@ -89,7 +133,10 @@ const isEligibleForClaim = async (walletAddress: string): Promise<{
         txnCount,
         proposedAmount: eligibilityResult.amount,
         balanceExceeded: false,
-        remainingPool: poolStatus.remaining
+        remainingPool: poolStatus.remaining,
+        nativeFogo: dualBalanceCheck.nativeFogo,
+        splFogo: dualBalanceCheck.splFogo,
+        totalFogo: dualBalanceCheck.totalFogo
       };
     }
   }
@@ -99,7 +146,10 @@ const isEligibleForClaim = async (walletAddress: string): Promise<{
     txnCount, 
     proposedAmount: eligibilityResult.amount, 
     balanceExceeded: false,
-    remainingPool: poolStatus.remaining
+    remainingPool: poolStatus.remaining,
+    nativeFogo: dualBalanceCheck.nativeFogo,
+    splFogo: dualBalanceCheck.splFogo,
+    totalFogo: dualBalanceCheck.totalFogo
   };
 };
 
@@ -175,7 +225,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Claim tokens endpoint - now uses atomic processing
+  // Claim tokens endpoint - now uses atomic processing with dual FOGO balance checking
   app.post("/api/faucet/claim", async (req, res) => {
     try {
       const { walletAddress } = claimTokensSchema.parse(req.body);
@@ -183,6 +233,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const config = await storage.getFaucetConfig();
       if (!config || !config.isActive) {
         return res.status(400).json({ error: "Faucet is currently inactive" });
+      }
+      
+      // CRITICAL: Check dual FOGO balance BEFORE processing claim to prevent bypass
+      const dualBalanceCheck = await checkDualFogoEligibility(walletAddress);
+      if (!dualBalanceCheck.eligible) {
+        const balanceType = dualBalanceCheck.exceededType === "native" ? "native FOGO" : "SPL FOGO";
+        return res.status(400).json({ 
+          error: `Wallet ${balanceType} balance exceeds 10 tokens (Native: ${dualBalanceCheck.nativeFogo}, SPL: ${dualBalanceCheck.splFogo})` 
+        });
       }
       
       // Get real wallet data for atomic processing
