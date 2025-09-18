@@ -104,44 +104,172 @@ export class Web3Service {
     }
   }
 
+  // Simple cache for balance checks (2 minute TTL for more frequent updates)
+  private static balanceCache = new Map<string, { balance: string; timestamp: number }>();
+  private static readonly BALANCE_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+  
   async getWalletBalance(walletAddress: string): Promise<string> {
+    const cacheKey = `native:${walletAddress}`;
+    
+    // Check cache first
+    const cached = Web3Service.balanceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < Web3Service.BALANCE_CACHE_TTL_MS) {
+      return cached.balance;
+    }
+    
+    // Check if there's already an in-flight request for this balance (coalescing)
+    const existingRequest = Web3Service.inFlightBalanceRequests.get(cacheKey);
+    if (existingRequest) {
+      return existingRequest;
+    }
+    
+    // Create the promise and store it for coalescing
+    const requestPromise = this._getWalletBalanceInternal(walletAddress, cacheKey)
+      .finally(() => {
+        // Clean up in-flight request
+        Web3Service.inFlightBalanceRequests.delete(cacheKey);
+      });
+    
+    Web3Service.inFlightBalanceRequests.set(cacheKey, requestPromise);
+    
+    return requestPromise;
+  }
+
+  private async _getWalletBalanceInternal(walletAddress: string, cacheKey: string): Promise<string> {
     try {
       this.initialize();
       const publicKey = new PublicKey(walletAddress);
-      const balance = await this.connection.getBalance(publicKey);
+      
+      // Add timeout to prevent hanging
+      const balance = await Promise.race([
+        this.connection.getBalance(publicKey),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Native balance check timeout')), 10000)
+        )
+      ]);
+      
       // Convert from lamports to FOGO (native token on Fogo testnet)
       const fogoBalance = (balance / LAMPORTS_PER_SOL).toString();
+      
+      // Cache the successful result
+      Web3Service.balanceCache.set(cacheKey, {
+        balance: fogoBalance,
+        timestamp: Date.now()
+      });
+      
       return fogoBalance;
     } catch (error: any) {
       console.error("Error getting wallet balance:", error);
+      
+      // Try to return stale cache (max 10 minutes old)
+      const staleCache = Web3Service.balanceCache.get(cacheKey);
+      if (staleCache && Date.now() - staleCache.timestamp < 10 * 60 * 1000) { // Max 10 min stale
+        console.warn(`Using stale cached balance for ${walletAddress}: ${staleCache.balance}`);
+        return staleCache.balance;
+      }
+      
       throw new Error(`Failed to get wallet balance: ${error.message}`);
     }
   }
 
   async getSplFogoBalance(walletAddress: string): Promise<string> {
+    const cacheKey = `spl:${walletAddress}`;
+    
+    // Check cache first
+    const cached = Web3Service.balanceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < Web3Service.BALANCE_CACHE_TTL_MS) {
+      return cached.balance;
+    }
+    
+    // Check if there's already an in-flight request for this balance (coalescing)
+    const existingRequest = Web3Service.inFlightBalanceRequests.get(cacheKey);
+    if (existingRequest) {
+      return existingRequest;
+    }
+    
+    // Create the promise and store it for coalescing
+    const requestPromise = this._getSplFogoBalanceInternal(walletAddress, cacheKey)
+      .finally(() => {
+        // Clean up in-flight request
+        Web3Service.inFlightBalanceRequests.delete(cacheKey);
+      });
+    
+    Web3Service.inFlightBalanceRequests.set(cacheKey, requestPromise);
+    
+    return requestPromise;
+  }
+
+  private async _getSplFogoBalanceInternal(walletAddress: string, cacheKey: string): Promise<string> {
     try {
       this.initialize();
       const walletPublicKey = new PublicKey(walletAddress);
       const splFogoMint = new PublicKey(this.SPL_FOGO_MINT);
 
-      // Get the associated token account address
-      const associatedTokenAddress = await getAssociatedTokenAddress(
-        splFogoMint,
-        walletPublicKey
-      );
+      // Get the associated token account address with timeout
+      const associatedTokenAddress = await Promise.race([
+        getAssociatedTokenAddress(splFogoMint, walletPublicKey),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Associated token address timeout')), 5000)
+        )
+      ]);
 
       try {
-        // Get the account info
-        const account = await getAccount(this.connection, associatedTokenAddress);
+        // Get the account info with timeout
+        const account = await Promise.race([
+          getAccount(this.connection, associatedTokenAddress),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('SPL account fetch timeout')), 10000)
+          )
+        ]);
+        
         // Convert balance from smallest units (considering decimals, usually 9 for SPL tokens)
         const balance = Number(account.amount) / Math.pow(10, 9); // Assuming 9 decimals
-        return balance.toString();
-      } catch (error) {
-        // Account doesn't exist, so balance is 0
-        return "0";
+        const balanceStr = balance.toString();
+        
+        // Cache the successful result
+        Web3Service.balanceCache.set(cacheKey, {
+          balance: balanceStr,
+          timestamp: Date.now()
+        });
+        
+        return balanceStr;
+        
+      } catch (accountError: any) {
+        // Check if this is specifically a "TokenAccountNotFoundError" (account doesn't exist)
+        if (accountError.name === 'TokenAccountNotFoundError' || 
+            accountError.message?.includes('could not find account')) {
+          // Account genuinely doesn't exist - safe to cache "0"
+          const balanceStr = "0";
+          Web3Service.balanceCache.set(cacheKey, {
+            balance: balanceStr,
+            timestamp: Date.now()
+          });
+          return balanceStr;
+        }
+        
+        // For other errors (timeout, network issues), DON'T cache "0" 
+        // Try to return stale cache instead
+        const staleCache = Web3Service.balanceCache.get(cacheKey);
+        if (staleCache) {
+          console.warn(`Using stale cached SPL balance for ${walletAddress} due to error: ${accountError.message}`);
+          return staleCache.balance;
+        }
+        
+        // No cache available - this is a real error, don't return "0"
+        throw accountError;
       }
+      
     } catch (error: any) {
       console.error("Error getting SPL FOGO balance:", error);
+      
+      // Try to return stale cache even if expired
+      const staleCache = Web3Service.balanceCache.get(cacheKey);
+      if (staleCache && Date.now() - staleCache.timestamp < 10 * 60 * 1000) { // Max 10 min stale
+        console.warn(`Using stale cached SPL balance for ${walletAddress}: ${staleCache.balance}`);
+        return staleCache.balance;
+      }
+      
+      // No reliable cache available - throw error instead of returning fake "0"
       throw new Error(`Failed to get SPL FOGO balance: ${error.message}`);
     }
   }
@@ -154,21 +282,11 @@ export class Web3Service {
     exceededType?: string;
   }> {
     try {
-      // Get both native FOGO and SPL FOGO balances concurrently with timeout
-      const timeoutMs = 15000; // 15 second timeout
+      // Get both native FOGO and SPL FOGO balances concurrently
+      // Timeout handling is now done in the individual balance methods
       const [nativeFogoBalance, splFogoBalance] = await Promise.all([
-        Promise.race([
-          this.getWalletBalance(walletAddress),
-          new Promise<string>((_, reject) => 
-            setTimeout(() => reject(new Error('Native balance check timeout')), timeoutMs)
-          )
-        ]),
-        Promise.race([
-          this.getSplFogoBalance(walletAddress),
-          new Promise<string>((_, reject) => 
-            setTimeout(() => reject(new Error('SPL balance check timeout')), timeoutMs)
-          )
-        ])
+        this.getWalletBalance(walletAddress),
+        this.getSplFogoBalance(walletAddress)
       ]);
 
       const nativeFogo = parseFloat(nativeFogoBalance);
@@ -342,6 +460,9 @@ export class Web3Service {
   
   // In-flight request coalescing to prevent duplicate scans
   private static inFlightRequests = new Map<string, Promise<number>>();
+  
+  // In-flight balance request coalescing
+  private static inFlightBalanceRequests = new Map<string, Promise<string>>();
   
   async getTransactionCount(walletAddress: string): Promise<number> {
     // Check cache first
