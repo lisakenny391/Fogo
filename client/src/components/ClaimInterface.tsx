@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Coins, CheckCircle, XCircle, Clock, AlertTriangle, ExternalLink, Copy } from "lucide-react";
+import { Coins, CheckCircle, XCircle, Clock, AlertTriangle, ExternalLink, Copy, Droplets } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { faucetApi } from "@/lib/api";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 
 interface ClaimInterfaceProps {
@@ -31,6 +31,15 @@ export function ClaimInterface({
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
+  
+  // Real-time pool status query (updates every second)
+  const { data: poolStatus } = useQuery({
+    queryKey: ['/api/faucet/status', 'pool-display'],
+    queryFn: () => faucetApi.getStatus(),
+    refetchInterval: 1000, // Update every second
+    refetchIntervalInBackground: true,
+    staleTime: 0, // Always consider stale to refetch
+  });
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -216,8 +225,33 @@ export function ClaimInterface({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-{/* Removed detailed eligibility information as requested by user */}
-
+        {/* Real-time Pool Status Display */}
+        {poolStatus && (
+          <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/10 dark:to-cyan-900/10 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
+                <Droplets className="h-4 w-4" />
+                <span className="font-medium">Daily Pool</span>
+              </div>
+              <div className="text-right">
+                <div className="font-mono text-blue-800 dark:text-blue-300">
+                  {(parseFloat(poolStatus.dailyLimit) - parseFloat(poolStatus.totalDistributed || "0")).toFixed(1)} FOGO
+                </div>
+                <div className="text-xs text-blue-600 dark:text-blue-400">
+                  of {parseFloat(poolStatus.dailyLimit).toFixed(0)} available
+                </div>
+              </div>
+            </div>
+            <div className="mt-2 w-full bg-blue-100 dark:bg-blue-900/20 rounded-full h-2">
+              <div 
+                className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-300" 
+                style={{ 
+                  width: `${Math.max(0, Math.min(100, ((parseFloat(poolStatus.dailyLimit) - parseFloat(poolStatus.totalDistributed || "0")) / parseFloat(poolStatus.dailyLimit)) * 100))}%` 
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         {isConnected && isChecking && eligibilityStatus === "idle" && (
           <div className="p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
