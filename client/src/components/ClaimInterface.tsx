@@ -34,7 +34,7 @@ export function ClaimInterface({
   
   // Real-time pool status query (updates every second)
   const { data: poolStatus } = useQuery({
-    queryKey: ['/api/faucet/status', 'pool-display'],
+    queryKey: ['/api/faucet/status'],
     queryFn: () => faucetApi.getStatus(),
     refetchInterval: 1000, // Update every second
     refetchIntervalInBackground: true,
@@ -225,30 +225,115 @@ export function ClaimInterface({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Real-time Pool Status Display */}
+        {/* Enhanced Real-time Pool Status Display */}
         {poolStatus && (
-          <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/10 dark:to-cyan-900/10 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
-                <Droplets className="h-4 w-4" />
-                <span className="font-medium">Daily Pool</span>
-              </div>
-              <div className="text-right">
-                <div className="font-mono text-blue-800 dark:text-blue-300">
-                  {(parseFloat(poolStatus.dailyLimit) - parseFloat(poolStatus.totalDistributed || "0")).toFixed(1)} FOGO
+          <div className="space-y-2">
+            {/* Pool Status Card */}
+            {(() => {
+              const dailyLimit = parseFloat(poolStatus.dailyLimit) || 0;
+              const distributed = parseFloat(poolStatus.totalDistributed || "0") || 0;
+              
+              // Guard against invalid dailyLimit and calculate safe values
+              const remaining = dailyLimit > 0 ? Math.max(0, Math.min(dailyLimit, dailyLimit - distributed)) : 0;
+              const remainingPercent = dailyLimit > 0 ? Math.max(0, Math.min(100, (remaining / dailyLimit) * 100)) : 0;
+              
+              const isLow = remainingPercent < 20 && remainingPercent > 0;
+              const isVeryLow = remainingPercent < 5 && remainingPercent > 0;
+              const isExhausted = remaining <= 0 || dailyLimit <= 0;
+
+              return (
+                <div 
+                  className={`p-4 border rounded-lg ${
+                    isExhausted 
+                      ? 'bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/10 dark:to-orange-900/10 border-red-200 dark:border-red-800' 
+                      : isVeryLow 
+                      ? 'bg-gradient-to-r from-orange-50 to-yellow-50 dark:from-orange-900/10 dark:to-yellow-900/10 border-orange-200 dark:border-orange-800'
+                      : isLow
+                      ? 'bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-900/10 dark:to-amber-900/10 border-yellow-200 dark:border-yellow-800'
+                      : 'bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/10 dark:to-cyan-900/10 border-blue-200 dark:border-blue-800'
+                  }`}
+                  data-testid="card-pool-status"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className={`flex items-center gap-2 ${
+                      isExhausted 
+                        ? 'text-red-700 dark:text-red-400' 
+                        : isVeryLow 
+                        ? 'text-orange-700 dark:text-orange-400'
+                        : isLow
+                        ? 'text-yellow-700 dark:text-yellow-400'
+                        : 'text-blue-700 dark:text-blue-400'
+                    }`}>
+                      {isExhausted ? (
+                        <XCircle className="h-5 w-5" />
+                      ) : isVeryLow ? (
+                        <AlertTriangle className="h-5 w-5" />
+                      ) : (
+                        <Droplets className="h-5 w-5" />
+                      )}
+                      <div>
+                        <span className="font-semibold text-base">Daily Pool Status</span>
+                        {isExhausted && (
+                          <div className="text-sm font-medium" data-testid="status-pool-message">Pool Exhausted - Try Tomorrow</div>
+                        )}
+                        {isVeryLow && !isExhausted && (
+                          <div className="text-sm font-medium" data-testid="status-pool-message">Very Low - Hurry Up!</div>
+                        )}
+                        {isLow && !isVeryLow && (
+                          <div className="text-sm font-medium" data-testid="status-pool-message">Running Low</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div 
+                        className={`font-mono text-xl font-bold ${
+                          isExhausted 
+                            ? 'text-red-800 dark:text-red-300' 
+                            : isVeryLow 
+                            ? 'text-orange-800 dark:text-orange-300'
+                            : isLow
+                            ? 'text-yellow-800 dark:text-yellow-300'
+                            : 'text-blue-800 dark:text-blue-300'
+                        }`}
+                        data-testid="text-remaining-fogo"
+                      >
+                        {remaining.toFixed(1)} FOGO
+                      </div>
+                      <div className="text-sm opacity-80" data-testid="text-remaining-percent">
+                        {remainingPercent.toFixed(1)}% of {dailyLimit.toFixed(0)} remaining
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                      <div 
+                        className={`h-3 rounded-full transition-all duration-500 ${
+                          isExhausted 
+                            ? 'bg-gradient-to-r from-red-500 to-red-600' 
+                            : isVeryLow 
+                            ? 'bg-gradient-to-r from-orange-500 to-red-500'
+                            : isLow
+                            ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                            : 'bg-gradient-to-r from-blue-500 to-cyan-500'
+                        }`}
+                        style={{ 
+                          width: isExhausted ? '0%' : `${Math.max(3, Math.min(100, remainingPercent))}%` 
+                        }}
+                        data-testid="bar-remaining"
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs opacity-70">
+                      <span>Distributed: {distributed.toFixed(1)} FOGO</span>
+                      <span>Resets daily at UTC midnight</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-xs text-blue-600 dark:text-blue-400">
-                  of {parseFloat(poolStatus.dailyLimit).toFixed(0)} available
-                </div>
-              </div>
-            </div>
-            <div className="mt-2 w-full bg-blue-100 dark:bg-blue-900/20 rounded-full h-2">
-              <div 
-                className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-300" 
-                style={{ 
-                  width: `${Math.max(0, Math.min(100, ((parseFloat(poolStatus.dailyLimit) - parseFloat(poolStatus.totalDistributed || "0")) / parseFloat(poolStatus.dailyLimit)) * 100))}%` 
-                }}
-              />
+              );
+            })()}
+            
+            {/* Pool Management Notice */}
+            <div className="text-xs text-muted-foreground text-center p-2 bg-muted/50 rounded-lg">
+              Pool status updates in real-time • Managed by administrators
             </div>
           </div>
         )}
