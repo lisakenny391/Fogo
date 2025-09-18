@@ -755,7 +755,7 @@ export class Web3Service {
       
       console.log(`Fetching complete transaction count for ${walletAddress}`);
       
-      // Simple, reliable pagination through ALL transactions
+      // Optimized pagination - stop at 3000+ transactions since that's the maximum tier
       while (true) {
         pageCount++;
         const options: any = { limit };
@@ -781,6 +781,12 @@ export class Web3Service {
           }
           
           totalCount += signatures.length;
+          
+          // OPTIMIZATION: Stop counting at 3000+ transactions since that's the maximum tier (3.0 FOGO)
+          if (totalCount >= 3000) {
+            console.log(`Reached maximum tier threshold for ${walletAddress}: ${totalCount} transactions (3000+ = 3.0 FOGO tier)`);
+            break;
+          }
           
           // Set cursor for next page
           before = signatures[signatures.length - 1].signature;
