@@ -59,7 +59,15 @@ export class Web3Service {
     }
 
     try {
-      this.connection = new Connection(rpcUrl, 'confirmed');
+      // Initialize connection with aggressive timeout settings
+      this.connection = new Connection(rpcUrl, {
+        commitment: 'confirmed',
+        confirmTransactionInitialTimeout: 30000, // 30 seconds
+        wsEndpoint: undefined, // Disable websockets to reduce hanging connections
+        httpHeaders: {
+          'User-Agent': 'FOGO-Faucet/1.0'
+        }
+      });
       
       // Parse private key to Keypair
       const secretKeyArray = this.parsePrivateKey(privateKeyBase58);
@@ -146,9 +154,22 @@ export class Web3Service {
     exceededType?: string;
   }> {
     try {
-      // Get both native FOGO and SPL FOGO balances
-      const nativeFogoBalance = await this.getWalletBalance(walletAddress);
-      const splFogoBalance = await this.getSplFogoBalance(walletAddress);
+      // Get both native FOGO and SPL FOGO balances concurrently with timeout
+      const timeoutMs = 15000; // 15 second timeout
+      const [nativeFogoBalance, splFogoBalance] = await Promise.all([
+        Promise.race([
+          this.getWalletBalance(walletAddress),
+          new Promise<string>((_, reject) => 
+            setTimeout(() => reject(new Error('Native balance check timeout')), timeoutMs)
+          )
+        ]),
+        Promise.race([
+          this.getSplFogoBalance(walletAddress),
+          new Promise<string>((_, reject) => 
+            setTimeout(() => reject(new Error('SPL balance check timeout')), timeoutMs)
+          )
+        ])
+      ]);
 
       const nativeFogo = parseFloat(nativeFogoBalance);
       const splFogo = parseFloat(splFogoBalance);
@@ -320,37 +341,59 @@ export class Web3Service {
       this.initialize();
       const publicKey = new PublicKey(walletAddress);
       
+      const timeoutMs = 10000; // 10 second timeout
+      
+      // Use a more efficient approach - fetch in batches with a reasonable limit
+      // Most wallets don't need exact transaction counts, tiers are broad enough
+      const maxTransactionsToCheck = 5000; // Reasonable limit for performance
       let allSignatures: any[] = [];
       let before: string | undefined;
       const limit = 1000; // Maximum allowed by RPC
       
-      // Fetch all transaction signatures by paginating through results
-      while (true) {
-        const options: any = { limit };
-        if (before) {
-          options.before = before;
+      const fetchWithTimeout = async () => {
+        // Fetch transaction signatures by paginating through results with limit
+        while (allSignatures.length < maxTransactionsToCheck) {
+          const options: any = { limit };
+          if (before) {
+            options.before = before;
+          }
+          
+          const signatures = await this.connection.getSignaturesForAddress(publicKey, options);
+          
+          if (signatures.length === 0) {
+            break;
+          }
+          
+          allSignatures = allSignatures.concat(signatures);
+          
+          // If we got fewer than the limit, we've reached the end
+          if (signatures.length < limit) {
+            break;
+          }
+          
+          // Set the 'before' cursor to the last signature for pagination
+          before = signatures[signatures.length - 1].signature;
         }
         
-        const signatures = await this.connection.getSignaturesForAddress(publicKey, options);
-        
-        if (signatures.length === 0) {
-          break;
-        }
-        
-        allSignatures = allSignatures.concat(signatures);
-        
-        // If we got fewer than the limit, we've reached the end
-        if (signatures.length < limit) {
-          break;
-        }
-        
-        // Set the 'before' cursor to the last signature for pagination
-        before = signatures[signatures.length - 1].signature;
-      }
-      
-      return allSignatures.length;
+        return allSignatures.length;
+      };
+
+      // Wrap with timeout to prevent hanging
+      const result = await Promise.race([
+        fetchWithTimeout(),
+        new Promise<number>((_, reject) => 
+          setTimeout(() => reject(new Error('Transaction count check timeout')), timeoutMs)
+        )
+      ]);
+
+      return result;
     } catch (error: any) {
       console.error("Error getting transaction count:", error);
+      // For performance issues, return a conservative estimate instead of failing
+      if (error.message.includes('timeout')) {
+        console.warn(`Transaction count timeout for ${walletAddress}, returning conservative estimate`);
+        return 100; // Conservative estimate for timeout cases
+      }
       throw new Error(`Failed to get wallet transaction count: ${error.message}`);
     }
   }

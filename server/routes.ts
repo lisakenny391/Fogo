@@ -202,7 +202,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Check eligibility endpoint
+  // Check eligibility endpoint - Optimized for speed when RPC is slow
   app.post("/api/faucet/check-eligibility", async (req, res) => {
     try {
       const { walletAddress } = checkEligibilitySchema.parse(req.body);
@@ -215,8 +215,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const eligibility = await isEligibleForClaim(walletAddress);
-      res.json(eligibility);
+      // Fast eligibility check with timeout protection
+      const startTime = Date.now();
+      console.log(`Starting eligibility check for ${walletAddress}`);
+      
+      try {
+        // Set a maximum timeout for the entire eligibility check
+        const eligibilityPromise = isEligibleForClaim(walletAddress);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Eligibility check timeout')), 12000) // 12 second max
+        );
+        
+        const eligibility = await Promise.race([eligibilityPromise, timeoutPromise]);
+        
+        const duration = Date.now() - startTime;
+        console.log(`Eligibility check completed in ${duration}ms for ${walletAddress}`);
+        
+        res.json(eligibility);
+      } catch (timeoutError) {
+        const duration = Date.now() - startTime;
+        console.warn(`Eligibility check timed out after ${duration}ms for ${walletAddress}`);
+        
+        // Return a safe fallback response when RPC is overloaded
+        res.json({
+          eligible: false,
+          reason: "Network is busy - please try again in a few minutes",
+          txnCount: 0,
+          proposedAmount: "0",
+          balanceExceeded: false,
+          remainingPool: "Unknown",
+          nativeFogo: "Unknown",
+          splFogo: "Unknown",
+          totalFogo: "Unknown"
+        });
+      }
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid wallet address format" });
