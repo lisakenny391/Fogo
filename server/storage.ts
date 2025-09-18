@@ -545,7 +545,7 @@ export class DatabaseStorage implements IStorage {
             daily_reset_date = CASE 
               WHEN balance_check.current_distributed = 0 -- If we reset
               THEN date_trunc('day', ${now} AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
-              ELSE daily_reset_date
+              ELSE ${faucetConfig}.daily_reset_date
             END,
             balance = balance - balance_check.awarded_amount,
             updated_at = ${now}
@@ -553,10 +553,10 @@ export class DatabaseStorage implements IStorage {
           WHERE ${faucetConfig}.id = balance_check.id
           RETURNING 
             balance_check.awarded_amount,
-            daily_limit - (balance_check.current_distributed + balance_check.awarded_amount) as remaining_pool,
-            daily_limit,
-            daily_distributed,
-            balance
+            balance_check.daily_limit - (balance_check.current_distributed + balance_check.awarded_amount) as remaining_pool,
+            balance_check.daily_limit,
+            balance_check.current_distributed + balance_check.awarded_amount as daily_distributed,
+            balance_check.balance - balance_check.awarded_amount as balance
         )
         SELECT 
           awarded_amount,
@@ -640,17 +640,14 @@ export class DatabaseStorage implements IStorage {
             await tx.update(rateLimits).set({
               claimCount: newClaimCount,
               lastClaim: now,
-              resetDate,
-              updatedAt: now
+              resetDate
             }).where(eq(rateLimits.walletAddress, claim.walletAddress));
           } else {
             await tx.insert(rateLimits).values({
               walletAddress: claim.walletAddress,
               claimCount: 1,
               lastClaim: now,
-              resetDate,
-              createdAt: now,
-              updatedAt: now
+              resetDate
             });
           }
 
