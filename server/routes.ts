@@ -7,6 +7,22 @@ import { createHash } from "crypto";
 import { web3Service } from "./web3Service";
 import { getFogoToBonusRate, getBonusTokenMint } from "./config";
 
+// Performance optimization: In-memory cache for expensive operations
+const cache = new Map<string, { data: any; expires: number }>();
+
+const getFromCache = (key: string) => {
+  const cached = cache.get(key);
+  if (cached && cached.expires > Date.now()) {
+    return cached.data;
+  }
+  cache.delete(key);
+  return null;
+};
+
+const setCache = (key: string, data: any, ttlSeconds: number = 5) => {
+  cache.set(key, { data, expires: Date.now() + ttlSeconds * 1000 });
+};
+
 // Helper functions for Fogo testnet faucet
 
 // DEPRECATED: Removed in favor of storage.getEligibleClaimAmount
@@ -164,9 +180,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   } else {
     console.log("✅ Blockchain connection established successfully");
   }
-  // Faucet status endpoint
+  // Faucet status endpoint - Performance optimized with caching
   app.get("/api/faucet/status", async (req, res) => {
     try {
+      // Check cache first for better performance (300 concurrent users)
+      const cacheKey = "faucet-status";
+      const cached = getFromCache(cacheKey);
+      
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+
       const config = await storage.getFaucetConfig();
       if (!config) {
         return res.status(500).json({ error: "Faucet configuration not found" });
@@ -186,7 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.warn("Failed to get real faucet balance, using config:", error);
       }
       
-      res.json({
+      const statusData = {
         balance: faucetBalance,
         dailyLimit: config.dailyLimit,
         isActive: config.isActive,
@@ -195,7 +220,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalUsers,
         totalDistributed,
         nextRefill: new Date(config.lastRefill.getTime() + 24 * 60 * 60 * 1000) // Next refill 24h after last refill
-      });
+      };
+
+      // Cache for 3 seconds to reduce RPC load
+      setCache(cacheKey, statusData, 3);
+      
+      res.json(statusData);
     } catch (error) {
       console.error("Faucet status error:", error);
       res.status(500).json({ error: "Failed to get faucet status" });
