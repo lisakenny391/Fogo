@@ -120,16 +120,7 @@ function ActivityPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <RecentActivity />
-        <div className="space-y-6">
-          <AnalyticsChart 
-            type="bar"
-            title="Hourly Activity"
-            description="Claims activity by hour"
-          />
-        </div>
-      </div>
+      <RecentActivity />
     </div>
   );
 }
