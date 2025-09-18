@@ -41,9 +41,9 @@ export class Web3Service {
   private initialize() {
     if (this.isInitialized) return;
 
-    // Temporarily disable enhanced Flux RPC due to parsing issues - use fallback
-    const enhancedFluxRpc = null; // process.env.ENHANCED_FLUX_RPC_URL;
-    const rpcUrl = process.env.FOGO_RPC_URL || "https://testnet.fogo.io";
+    // Use enhanced Flux RPC endpoint for improved reliability
+    const enhancedFluxRpc = process.env.ENHANCED_FLUX_RPC_URL;
+    const rpcUrl = enhancedFluxRpc || process.env.FOGO_RPC_URL || "https://testnet.fogo.io";
     
     if (enhancedFluxRpc) {
       console.log("Using enhanced Flux RPC endpoint for improved reliability");
