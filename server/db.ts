@@ -1,12 +1,9 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
+import { neon, neonConfig } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-http';
 import * as schema from "@shared/schema";
 
-// Disable WebSocket for serverless compatibility (Netlify Functions)
-// Use HTTP connection instead for better serverless performance
-neonConfig.fetchConnectionCache = true;
-neonConfig.useSecureWebSocket = false;
-neonConfig.pipelineConnect = false;
+// Use HTTP connection for serverless compatibility (Netlify Functions)
+// HTTP client avoids WebSocket connection issues in serverless environments
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -14,5 +11,5 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle({ client: pool, schema });
+export const sql = neon(process.env.DATABASE_URL);
+export const db = drizzle(sql, { schema });
