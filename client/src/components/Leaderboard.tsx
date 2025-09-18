@@ -194,6 +194,11 @@ export function Leaderboard({ limit = 1000 }: LeaderboardProps) {
                 <div className="text-xs text-muted-foreground" data-testid={`leaderboard-claims-${entry.rank}`}>
                   {entry.claims} claims
                 </div>
+                {entry.bonusClaims > 0 && (
+                  <div className="text-xs text-orange-600 dark:text-orange-400" data-testid={`leaderboard-bonus-${entry.rank}`}>
+                    +{parseFloat(entry.totalBonusAmount || '0').toLocaleString()} bonus ({entry.bonusClaims} claims)
+                  </div>
+                )}
               </div>
             </div>
           ))}

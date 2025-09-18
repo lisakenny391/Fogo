@@ -442,21 +442,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get statistics
+  // Get statistics (includes bonus information)
   app.get("/api/stats", async (req, res) => {
     try {
       const totalClaims = await storage.getTotalClaims();
       const totalUsers = await storage.getTotalUsers();
       const totalDistributed = await storage.getTotalDistributed();
+      const totalBonusDistributed = await storage.getTotalBonusDistributed();
+      const bonusStats = await storage.getBonusDistributionStats();
       const config = await storage.getFaucetConfig();
       
       res.json({
         totalClaims,
         totalUsers,
         totalDistributed,
+        totalBonusDistributed,
+        totalBonusClaims: bonusStats?.totalBonusClaims || 0,
         faucetBalance: config?.balance || "0",
         dailyLimit: config?.dailyLimit || "100",
-        isActive: config?.isActive || false
+        isActive: config?.isActive || false,
+        bonusConversionRate: getFogoToBonusRate()
       });
     } catch (error) {
       console.error("Stats error:", error);
@@ -464,7 +469,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get leaderboard
+  // Get leaderboard (includes bonus information)
   app.get("/api/leaderboard", async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 10;
@@ -476,7 +481,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         claims: entry.claims,
         totalAmount: entry.totalAmount,
         lastClaim: entry.lastClaim,
-        lastClaimAgo: getTimeAgo(entry.lastClaim)
+        lastClaimAgo: getTimeAgo(entry.lastClaim),
+        bonusClaims: entry.bonusClaims,
+        totalBonusAmount: entry.totalBonusAmount
       }));
       
       res.json(formattedLeaderboard);

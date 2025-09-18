@@ -61,14 +61,14 @@ export function StatsDashboard(props: StatsDashboardProps) {
     }
   };
 
-  const formatTokenAmount = (amount: string) => {
+  const formatTokenAmount = (amount: string, tokenType: "FOGO" | "BONUS" = "FOGO") => {
     const num = parseFloat(amount);
     if (num >= 1000000) {
-      return `${(num / 1000000).toFixed(1)}M FOGO`;
+      return `${(num / 1000000).toFixed(1)}M ${tokenType}`;
     } else if (num >= 1000) {
-      return `${(num / 1000).toFixed(1)}K FOGO`;
+      return `${(num / 1000).toFixed(1)}K ${tokenType}`;
     } else {
-      return `${num.toFixed(2)} FOGO`;
+      return `${num.toFixed(tokenType === "FOGO" ? 2 : 0)} ${tokenType}`;
     }
   };
 
@@ -88,9 +88,23 @@ export function StatsDashboard(props: StatsDashboardProps) {
       icon: Users
     },
     {
-      title: "Tokens Distributed",
-      value: formatTokenAmount(stats.totalDistributed),
+      title: "FOGO Distributed",
+      value: formatTokenAmount(stats.totalDistributed, "FOGO"),
       description: "Total FOGO distributed", 
+      changeText: "",
+      icon: TrendingUp
+    },
+    {
+      title: "Bonus Claims",
+      value: formatNumber(stats.totalBonusClaims),
+      description: "Successful bonus claims",
+      changeText: `Rate: 1:${stats.bonusConversionRate}`,
+      icon: Coins
+    },
+    {
+      title: "Bonus Distributed",
+      value: formatTokenAmount(stats.totalBonusDistributed, "BONUS"),
+      description: "Total bonus tokens distributed",
       changeText: "",
       icon: TrendingUp
     }

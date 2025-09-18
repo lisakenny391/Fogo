@@ -62,7 +62,7 @@ export interface IStorage {
   getTotalUsers(): Promise<number>;
   getTotalDistributed(): Promise<string>;
   getWalletTotalDistributed(walletAddress: string): Promise<string>;
-  getLeaderboard(limit?: number): Promise<Array<{ walletAddress: string; claims: number; totalAmount: string; lastClaim: Date }>>;
+  getLeaderboard(limit?: number): Promise<Array<{ walletAddress: string; claims: number; totalAmount: string; lastClaim: Date; bonusClaims: number; totalBonusAmount: string }>>;
   getClaimStats(): Promise<Array<{ date: string; claims: number; users: number }>>;
 }
 
@@ -344,7 +344,7 @@ export class DatabaseStorage implements IStorage {
     return parseFloat(result.total || "0").toFixed(8);
   }
 
-  async getLeaderboard(limit = 10): Promise<Array<{ walletAddress: string; claims: number; totalAmount: string; lastClaim: Date }>> {
+  async getLeaderboard(limit = 10): Promise<Array<{ walletAddress: string; claims: number; totalAmount: string; lastClaim: Date; bonusClaims: number; totalBonusAmount: string }>> {
     const results = await db.select({
       walletAddress: sql<string>`MIN(${claims.walletAddress})`, // Use MIN to get consistent wallet address case
       claimCount: sql<number>`count(*)`,
@@ -357,11 +357,41 @@ export class DatabaseStorage implements IStorage {
     .orderBy(desc(sql`count(*)`))
     .limit(limit);
     
+    // Get bonus claims data for these wallets
+    const walletAddresses = results.map(result => result.walletAddress);
+    let bonusData: Record<string, { bonusClaims: number; totalBonusAmount: string }> = {};
+    
+    if (walletAddresses.length > 0) {
+      const bonusResults = await db.select({
+        walletAddress: sql<string>`MIN(${bonusClaims.walletAddress})`,
+        bonusClaimCount: sql<number>`count(*)`,
+        totalBonusAmount: sql<string>`COALESCE(SUM(CAST(${bonusClaims.bonusAmount} AS DECIMAL)), 0)`
+      })
+      .from(bonusClaims)
+      .where(and(
+        eq(bonusClaims.status, "success"),
+        sql`LOWER(${bonusClaims.walletAddress}) IN (${sql.join(walletAddresses.map(addr => sql`LOWER(${addr})`), sql`, `)})`
+      ))
+      .groupBy(sql`LOWER(${bonusClaims.walletAddress})`);
+
+      // Convert bonus results to a lookup object (using lowercase addresses as keys for consistent matching)
+      bonusData = bonusResults.reduce((acc, result) => {
+        const lowerAddress = result.walletAddress.toLowerCase();
+        acc[lowerAddress] = {
+          bonusClaims: result.bonusClaimCount,
+          totalBonusAmount: parseFloat(result.totalBonusAmount || "0").toFixed(2)
+        };
+        return acc;
+      }, {} as Record<string, { bonusClaims: number; totalBonusAmount: string }>);
+    }
+    
     return results.map(result => ({
       walletAddress: result.walletAddress,
       claims: result.claimCount,
       totalAmount: parseFloat(result.totalAmount || "0").toFixed(8),
-      lastClaim: new Date(result.lastClaim) // Convert string to Date object
+      lastClaim: new Date(result.lastClaim), // Convert string to Date object
+      bonusClaims: bonusData[result.walletAddress.toLowerCase()]?.bonusClaims || 0,
+      totalBonusAmount: bonusData[result.walletAddress.toLowerCase()]?.totalBonusAmount || "0.00"
     }));
   }
 

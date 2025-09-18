@@ -41,9 +41,12 @@ export interface Stats {
   totalClaims: number;
   totalUsers: number;
   totalDistributed: string;
+  totalBonusDistributed: string;
+  totalBonusClaims: number;
   faucetBalance: string;
   dailyLimit: string;
   isActive: boolean;
+  bonusConversionRate: number;
 }
 
 export interface LeaderboardEntry {
@@ -53,6 +56,8 @@ export interface LeaderboardEntry {
   totalAmount: string;
   lastClaim: string;
   lastClaimAgo: string;
+  bonusClaims: number;
+  totalBonusAmount: string;
 }
 
 export interface ChartData {
