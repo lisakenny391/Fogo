@@ -1,8 +1,9 @@
-import { type User, type InsertUser, type Claim, type InsertClaim, type FaucetConfig, type InsertFaucetConfig, type RateLimit, type InsertRateLimit, type WalletEligibility, type InsertWalletEligibility } from "@shared/schema";
-import { users, claims, faucetConfig, rateLimits, walletEligibility } from "@shared/schema";
+import { type User, type InsertUser, type Claim, type InsertClaim, type FaucetConfig, type InsertFaucetConfig, type RateLimit, type InsertRateLimit, type WalletEligibility, type InsertWalletEligibility, type BonusClaim, type InsertBonusClaim, type BonusDistributionStats, type InsertBonusDistributionStats } from "@shared/schema";
+import { users, claims, faucetConfig, rateLimits, walletEligibility, bonusClaims, bonusDistributionStats } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { dailyPoolLimit, fogoToBonusRate } from "./config";
 
 // Storage interface for faucet operations
 export interface IStorage {
@@ -43,6 +44,19 @@ export interface IStorage {
   getWalletEligibility(walletAddress: string): Promise<WalletEligibility | undefined>;
   upsertWalletEligibility(eligibility: InsertWalletEligibility): Promise<WalletEligibility>;
   
+  // Bonus token operations
+  createBonusClaim(bonusClaim: InsertBonusClaim): Promise<BonusClaim>;
+  getBonusClaimsByWallet(walletAddress: string): Promise<BonusClaim[]>;
+  updateBonusClaimStatus(id: string, status: "pending" | "success" | "failed", transactionHash?: string): Promise<BonusClaim | undefined>;
+  calculateBonusAmount(fogoAmount: string): Promise<{ bonusAmount: string; conversionRate: string }>;
+  processBonusClaimAtomic(bonusClaim: InsertBonusClaim): Promise<{ success: boolean; bonusClaim?: BonusClaim; error?: string }>;
+  finalizeBonusClaim(bonusClaimId: string, outcome: { success: boolean; txHash?: string | null }): Promise<{ success: boolean; error?: string }>;
+  
+  // Bonus distribution tracking
+  getBonusDistributionStats(): Promise<BonusDistributionStats | undefined>;
+  updateBonusDistributionStats(bonusAmount: string): Promise<{ success: boolean; error?: string }>;
+  getTotalBonusDistributed(): Promise<string>;
+  
   // Analytics
   getTotalClaims(): Promise<number>;
   getTotalUsers(): Promise<number>;
@@ -63,7 +77,7 @@ export class DatabaseStorage implements IStorage {
       const now = new Date();
       await db.insert(faucetConfig).values({
         balance: "1000000",
-        dailyLimit: "300", // Updated to 300 FOGO
+        dailyLimit: dailyPoolLimit.toString(), // Use configurable daily pool limit from env
         dailyDistributed: "0",
         dailyResetDate: now,
         isActive: true,
@@ -673,6 +687,174 @@ export class DatabaseStorage implements IStorage {
         error: error instanceof Error ? error.message : "Failed to finalize claim"
       };
     }
+  }
+
+  // Bonus token operations
+  async createBonusClaim(insertBonusClaim: InsertBonusClaim): Promise<BonusClaim> {
+    const [bonusClaim] = await db.insert(bonusClaims).values({
+      ...insertBonusClaim,
+      status: insertBonusClaim.status || "pending"
+    }).returning();
+    return bonusClaim;
+  }
+
+  async getBonusClaimsByWallet(walletAddress: string): Promise<BonusClaim[]> {
+    return await db.select().from(bonusClaims)
+      .where(sql`LOWER(${bonusClaims.walletAddress}) = LOWER(${walletAddress})`);
+  }
+
+  async updateBonusClaimStatus(id: string, status: "pending" | "success" | "failed", transactionHash?: string): Promise<BonusClaim | undefined> {
+    const [bonusClaim] = await db.update(bonusClaims).set({
+      status,
+      transactionHash,
+      updatedAt: new Date()
+    }).where(eq(bonusClaims.id, id)).returning();
+    return bonusClaim || undefined;
+  }
+
+  async calculateBonusAmount(fogoAmount: string): Promise<{ bonusAmount: string; conversionRate: string }> {
+    const fogoFloat = parseFloat(fogoAmount);
+    const conversionRate = fogoToBonusRate.toString();
+    const bonusAmount = (fogoFloat * fogoToBonusRate).toString();
+    
+    return {
+      bonusAmount,
+      conversionRate
+    };
+  }
+
+  async processBonusClaimAtomic(insertBonusClaim: InsertBonusClaim): Promise<{ success: boolean; bonusClaim?: BonusClaim; error?: string }> {
+    try {
+      return await db.transaction(async (tx) => {
+        // Insert bonus claim
+        const [bonusClaim] = await tx.insert(bonusClaims).values(insertBonusClaim).returning();
+        
+        // Update bonus distribution stats
+        await this.updateBonusDistributionStatsInTransaction(tx, insertBonusClaim.bonusAmount);
+        
+        return { success: true, bonusClaim };
+      });
+    } catch (error) {
+      console.error("Failed to process bonus claim atomically:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to process bonus claim"
+      };
+    }
+  }
+
+  async finalizeBonusClaim(bonusClaimId: string, outcome: { success: boolean; txHash?: string | null }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const [bonusClaim] = await db.update(bonusClaims).set({
+        status: outcome.success ? "success" : "failed",
+        transactionHash: outcome.txHash,
+        updatedAt: new Date()
+      }).where(and(
+        eq(bonusClaims.id, bonusClaimId),
+        eq(bonusClaims.status, "pending")
+      )).returning();
+
+      if (!bonusClaim) {
+        // Bonus claim not found or already finalized - idempotent success
+        return { success: true };
+      }
+
+      if (!outcome.success) {
+        // On failure, compensate by reducing the bonus distribution stats
+        const bonusAmount = parseFloat(bonusClaim.bonusAmount);
+        await this.compensateBonusDistributionStats(bonusAmount);
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error("Failed to finalize bonus claim:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to finalize bonus claim"
+      };
+    }
+  }
+
+  // Bonus distribution tracking
+  async getBonusDistributionStats(): Promise<BonusDistributionStats | undefined> {
+    await this.ensureBonusDistributionStats();
+    const [stats] = await db.select().from(bonusDistributionStats).limit(1);
+    return stats || undefined;
+  }
+
+  async updateBonusDistributionStats(bonusAmount: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.ensureBonusDistributionStats();
+      
+      const bonusFloat = parseFloat(bonusAmount);
+      await db.execute(sql`
+        UPDATE ${bonusDistributionStats} 
+        SET 
+          total_bonus_distributed = total_bonus_distributed + ${bonusFloat},
+          total_bonus_claims = total_bonus_claims + 1,
+          last_updated = ${new Date()}
+        WHERE id = (SELECT id FROM ${bonusDistributionStats} LIMIT 1)
+      `);
+      
+      return { success: true };
+    } catch (error) {
+      console.error("Failed to update bonus distribution stats:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to update bonus distribution stats"
+      };
+    }
+  }
+
+  async getTotalBonusDistributed(): Promise<string> {
+    const stats = await this.getBonusDistributionStats();
+    return stats?.totalBonusDistributed || "0";
+  }
+
+  // Helper methods for bonus distribution
+  private async ensureBonusDistributionStats(): Promise<void> {
+    const [existing] = await db.select().from(bonusDistributionStats).limit(1);
+    if (!existing) {
+      await db.insert(bonusDistributionStats).values({
+        totalBonusDistributed: "0",
+        totalBonusClaims: 0,
+        lastUpdated: new Date()
+      });
+    }
+  }
+
+  private async updateBonusDistributionStatsInTransaction(tx: any, bonusAmount: string): Promise<void> {
+    const bonusFloat = parseFloat(bonusAmount);
+    
+    // Ensure stats exist
+    const [existing] = await tx.select().from(bonusDistributionStats).limit(1);
+    if (!existing) {
+      await tx.insert(bonusDistributionStats).values({
+        totalBonusDistributed: bonusAmount,
+        totalBonusClaims: 1,
+        lastUpdated: new Date()
+      });
+    } else {
+      await tx.execute(sql`
+        UPDATE ${bonusDistributionStats} 
+        SET 
+          total_bonus_distributed = total_bonus_distributed + ${bonusFloat},
+          total_bonus_claims = total_bonus_claims + 1,
+          last_updated = ${new Date()}
+        WHERE id = (SELECT id FROM ${bonusDistributionStats} LIMIT 1)
+      `);
+    }
+  }
+
+  private async compensateBonusDistributionStats(bonusAmount: number): Promise<void> {
+    await db.execute(sql`
+      UPDATE ${bonusDistributionStats} 
+      SET 
+        total_bonus_distributed = GREATEST(total_bonus_distributed - ${bonusAmount}, 0),
+        total_bonus_claims = GREATEST(total_bonus_claims - 1, 0),
+        last_updated = ${new Date()}
+      WHERE id = (SELECT id FROM ${bonusDistributionStats} LIMIT 1)
+    `);
   }
 }
 

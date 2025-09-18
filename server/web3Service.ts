@@ -7,9 +7,18 @@ import {
   Transaction,
   sendAndConfirmTransaction 
 } from "@solana/web3.js";
-import { getAccount, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { 
+  getAccount, 
+  getAssociatedTokenAddress, 
+  TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountInstruction,
+  createTransferInstruction,
+  getOrCreateAssociatedTokenAccount,
+  transfer
+} from "@solana/spl-token";
 import bs58 from "bs58";
 import { createHash } from "crypto";
+import { bonusTokenMint } from "./config";
 
 export class Web3Service {
   private connection!: Connection;
@@ -231,6 +240,78 @@ export class Web3Service {
     } catch (error: any) {
       console.error("Error sending tokens:", error);
       throw new Error(`Failed to send tokens: ${error.message}`);
+    }
+  }
+
+  async sendBonusTokens(toAddress: string, amount: string): Promise<string> {
+    try {
+      this.initialize();
+      
+      // Convert amount to smallest units (assuming 9 decimals for SPL tokens)
+      const amountFloat = parseFloat(amount);
+      if (isNaN(amountFloat) || amountFloat < 0) {
+        throw new Error(`Invalid bonus token amount: ${amount}`);
+      }
+      const amountInSmallestUnits = Math.round(amountFloat * Math.pow(10, 9));
+      
+      // Validate recipient address
+      let recipientPublicKey: PublicKey;
+      try {
+        recipientPublicKey = new PublicKey(toAddress);
+      } catch (error) {
+        throw new Error(`Invalid recipient address: ${toAddress}`);
+      }
+      
+      // Get bonus token mint
+      const mintPublicKey = new PublicKey(bonusTokenMint);
+      
+      // Get or create associated token accounts
+      const fromTokenAccount = await getOrCreateAssociatedTokenAccount(
+        this.connection,
+        this.wallet,
+        mintPublicKey,
+        this.wallet.publicKey
+      );
+      
+      const toTokenAccount = await getOrCreateAssociatedTokenAccount(
+        this.connection,
+        this.wallet,
+        mintPublicKey,
+        recipientPublicKey
+      );
+      
+      // Send the SPL token transfer
+      console.log(`Sending ${amount} bonus tokens to ${toAddress}`);
+      const signature = await transfer(
+        this.connection,
+        this.wallet,
+        fromTokenAccount.address,
+        toTokenAccount.address,
+        this.wallet.publicKey,
+        amountInSmallestUnits
+      );
+      
+      console.log(`Bonus token transaction confirmed: ${signature}`);
+      return signature;
+    } catch (error: any) {
+      console.error("Error sending bonus tokens:", error);
+      throw new Error(`Failed to send bonus tokens: ${error.message}`);
+    }
+  }
+
+  async sendTokensAndBonus(toAddress: string, fogoAmount: string, bonusAmount: string): Promise<{ fogoTxHash: string; bonusTxHash: string }> {
+    try {
+      // Send both FOGO and bonus tokens
+      const fogoTxHash = await this.sendTokens(toAddress, fogoAmount);
+      const bonusTxHash = await this.sendBonusTokens(toAddress, bonusAmount);
+      
+      return {
+        fogoTxHash,
+        bonusTxHash
+      };
+    } catch (error: any) {
+      console.error("Error sending tokens and bonus:", error);
+      throw new Error(`Failed to send tokens and bonus: ${error.message}`);
     }
   }
 
