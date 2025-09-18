@@ -86,7 +86,7 @@ export function FaucetStatus(props: FaucetStatusProps) {
     } else if (num >= 1000) {
       return `${(num / 1000).toFixed(1)}K FOGO`;
     } else {
-      return `${num.toFixed(0)} FOGO`;
+      return `${num.toFixed(2)} FOGO`;
     }
   };
 

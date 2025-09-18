@@ -323,7 +323,7 @@ export class DatabaseStorage implements IStorage {
       walletAddress: sql<string>`MIN(${claims.walletAddress})`, // Use MIN to get consistent wallet address case
       claimCount: sql<number>`count(*)`,
       totalAmount: sql<string>`COALESCE(SUM(CAST(${claims.amount} AS DECIMAL)), 0)`,
-      lastClaim: sql<Date>`MAX(${claims.createdAt})`
+      lastClaim: sql<string>`MAX(${claims.createdAt})`
     })
     .from(claims)
     .where(eq(claims.status, "success"))
@@ -335,7 +335,7 @@ export class DatabaseStorage implements IStorage {
       walletAddress: result.walletAddress,
       claims: result.claimCount,
       totalAmount: parseFloat(result.totalAmount || "0").toFixed(8),
-      lastClaim: result.lastClaim
+      lastClaim: new Date(result.lastClaim) // Convert string to Date object
     }));
   }
 
