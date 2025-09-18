@@ -336,64 +336,120 @@ export class Web3Service {
     }
   }
 
+  // Simple in-memory cache for transaction counts (10 minute TTL)
+  private static txCountCache = new Map<string, { count: number; timestamp: number }>();
+  private static readonly CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  
+  // In-flight request coalescing to prevent duplicate scans
+  private static inFlightRequests = new Map<string, Promise<number>>();
+  
   async getTransactionCount(walletAddress: string): Promise<number> {
+    // Check cache first
+    const cached = Web3Service.txCountCache.get(walletAddress);
+    if (cached && Date.now() - cached.timestamp < Web3Service.CACHE_TTL_MS) {
+      console.log(`Transaction count cache hit for ${walletAddress}: ${cached.count}`);
+      return cached.count;
+    }
+    
+    // Check if there's already an in-flight request for this wallet (coalescing)
+    const existingRequest = Web3Service.inFlightRequests.get(walletAddress);
+    if (existingRequest) {
+      console.log(`Coalescing transaction count request for ${walletAddress}`);
+      return existingRequest;
+    }
+    
+    // Create the promise and store it for coalescing
+    const requestPromise = this._getTransactionCountReliable(walletAddress)
+      .then(count => {
+        // Cache the result on success
+        Web3Service.txCountCache.set(walletAddress, {
+          count,
+          timestamp: Date.now()
+        });
+        return count;
+      })
+      .catch(error => {
+        // On error, try to return stale cache if available
+        const staleCache = Web3Service.txCountCache.get(walletAddress);
+        if (staleCache) {
+          console.warn(`Using stale cached transaction count for ${walletAddress}: ${staleCache.count}`);
+          return staleCache.count;
+        }
+        throw error;
+      })
+      .finally(() => {
+        // Clean up in-flight request
+        Web3Service.inFlightRequests.delete(walletAddress);
+      });
+    
+    Web3Service.inFlightRequests.set(walletAddress, requestPromise);
+    
+    return requestPromise;
+  }
+  
+  private async _getTransactionCountReliable(walletAddress: string): Promise<number> {
     try {
       this.initialize();
       const publicKey = new PublicKey(walletAddress);
       
-      const timeoutMs = 10000; // 10 second timeout
-      
-      // Use a more efficient approach - fetch in batches with a reasonable limit
-      // Most wallets don't need exact transaction counts, tiers are broad enough
-      const maxTransactionsToCheck = 5000; // Reasonable limit for performance
-      let allSignatures: any[] = [];
+      let totalCount = 0;
       let before: string | undefined;
-      const limit = 1000; // Maximum allowed by RPC
+      const limit = 1000; // Standard RPC limit
+      let pageCount = 0;
       
-      const fetchWithTimeout = async () => {
-        // Fetch transaction signatures by paginating through results with limit
-        while (allSignatures.length < maxTransactionsToCheck) {
-          const options: any = { limit };
-          if (before) {
-            options.before = before;
-          }
-          
-          const signatures = await this.connection.getSignaturesForAddress(publicKey, options);
-          
-          if (signatures.length === 0) {
-            break;
-          }
-          
-          allSignatures = allSignatures.concat(signatures);
-          
-          // If we got fewer than the limit, we've reached the end
-          if (signatures.length < limit) {
-            break;
-          }
-          
-          // Set the 'before' cursor to the last signature for pagination
-          before = signatures[signatures.length - 1].signature;
+      console.log(`Fetching complete transaction count for ${walletAddress}`);
+      
+      // Simple, reliable pagination through ALL transactions
+      while (true) {
+        pageCount++;
+        const options: any = { limit };
+        if (before) {
+          options.before = before;
         }
         
-        return allSignatures.length;
-      };
-
-      // Wrap with timeout to prevent hanging
-      const result = await Promise.race([
-        fetchWithTimeout(),
-        new Promise<number>((_, reject) => 
-          setTimeout(() => reject(new Error('Transaction count check timeout')), timeoutMs)
-        )
-      ]);
-
-      return result;
-    } catch (error: any) {
-      console.error("Error getting transaction count:", error);
-      // For performance issues, return a conservative estimate instead of failing
-      if (error.message.includes('timeout')) {
-        console.warn(`Transaction count timeout for ${walletAddress}, returning conservative estimate`);
-        return 100; // Conservative estimate for timeout cases
+        try {
+          const signatures = await this.connection.getSignaturesForAddress(publicKey, options);
+          
+          // Stop when we get zero results (proper end condition)
+          if (signatures.length === 0) {
+            console.log(`Reached end of transaction history for ${walletAddress} after ${pageCount} pages`);
+            break;
+          }
+          
+          totalCount += signatures.length;
+          
+          // Set cursor for next page
+          before = signatures[signatures.length - 1].signature;
+          
+          // Log progress for large wallets
+          if (pageCount % 10 === 0) {
+            console.log(`Fetched ${totalCount} transactions so far for ${walletAddress} (page ${pageCount})`);
+          }
+          
+          // If we got fewer than the limit, we might be at the end, but continue to be sure
+          // (some RPCs return partial pages due to rate limiting but still have more data)
+          
+          // Small delay between pages to be respectful
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+        } catch (pageError: any) {
+          console.warn(`Page ${pageCount} fetch error for ${walletAddress}: ${pageError.message}`);
+          
+          // On page error, wait a bit and try next page
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // If we can't get this page, stop here and return what we have
+          // This prevents one bad page from ruining the entire count
+          console.log(`Stopping at ${totalCount} transactions due to page error`);
+          break;
+        }
       }
+      
+      console.log(`Final transaction count for ${walletAddress}: ${totalCount}`);
+      return totalCount;
+      
+    } catch (error: any) {
+      console.error(`Error getting transaction count for ${walletAddress}:`, error);
       throw new Error(`Failed to get wallet transaction count: ${error.message}`);
     }
   }
