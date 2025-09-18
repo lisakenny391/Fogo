@@ -569,7 +569,7 @@ export class DatabaseStorage implements IStorage {
           SELECT 
             id,
             balance,
-            ${envDailyLimitStr} as env_daily_limit,
+            CAST(${envDailyLimitStr} AS DECIMAL) as env_daily_limit,
             daily_distributed,
             daily_reset_date,
             -- Check if we need to reset (UTC midnight comparison)
