@@ -166,9 +166,35 @@ export class Web3Service {
       this.initialize();
       const publicKey = new PublicKey(walletAddress);
       
-      // Get recent transaction signatures for this wallet
-      const signatures = await this.connection.getSignaturesForAddress(publicKey, { limit: 1000 });
-      return signatures.length;
+      let allSignatures: any[] = [];
+      let before: string | undefined;
+      const limit = 1000; // Maximum allowed by RPC
+      
+      // Fetch all transaction signatures by paginating through results
+      while (true) {
+        const options: any = { limit };
+        if (before) {
+          options.before = before;
+        }
+        
+        const signatures = await this.connection.getSignaturesForAddress(publicKey, options);
+        
+        if (signatures.length === 0) {
+          break;
+        }
+        
+        allSignatures = allSignatures.concat(signatures);
+        
+        // If we got fewer than the limit, we've reached the end
+        if (signatures.length < limit) {
+          break;
+        }
+        
+        // Set the 'before' cursor to the last signature for pagination
+        before = signatures[signatures.length - 1].signature;
+      }
+      
+      return allSignatures.length;
     } catch (error: any) {
       console.error("Error getting transaction count:", error);
       throw new Error(`Failed to get wallet transaction count: ${error.message}`);

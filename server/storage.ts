@@ -410,7 +410,7 @@ export class DatabaseStorage implements IStorage {
       return {
         amount: "0",
         eligible: false,
-        reason: "Wallet balance exceeds 10 FOGO limit"
+        reason: "Not eligible"
       };
     }
     
@@ -421,7 +421,7 @@ export class DatabaseStorage implements IStorage {
       return {
         amount: "0",
         eligible: false,
-        reason: "Wallet needs at least 70 transactions to claim"
+        reason: "Not eligible"
       };
     } else if (transactionCount >= 70 && transactionCount < 160) {
       claimAmount = "0.2";
@@ -472,11 +472,11 @@ export class DatabaseStorage implements IStorage {
   async processClaimAtomic(insertClaim: InsertClaim, transactionCount: number, walletBalance: string): Promise<{ success: boolean; claim?: Claim; remaining?: string; error?: string }> {
     // Validate input constraints before transaction
     if (parseFloat(walletBalance) > 10) {
-      return { success: false, error: "Wallet balance exceeds 10 FOGO limit" };
+      return { success: false, error: "Not eligible" };
     }
     
     if (transactionCount < 70) {
-      return { success: false, error: "Wallet needs at least 70 transactions to claim" };
+      return { success: false, error: "Not eligible" };
     }
     
     // Calculate base claim amount based on transaction count
@@ -535,8 +535,8 @@ export class DatabaseStorage implements IStorage {
           SELECT *
           FROM config_update
           WHERE 
-            balance >= awarded_amount -- Ensure sufficient faucet balance
-            AND awarded_amount > 0 -- Ensure there's something to award
+            config_update.balance >= config_update.awarded_amount -- Ensure sufficient faucet balance
+            AND config_update.awarded_amount > 0 -- Ensure there's something to award
         ),
         faucet_update AS (
           UPDATE ${faucetConfig}
@@ -547,7 +547,7 @@ export class DatabaseStorage implements IStorage {
               THEN date_trunc('day', ${now} AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
               ELSE ${faucetConfig}.daily_reset_date
             END,
-            balance = balance - balance_check.awarded_amount,
+            balance = ${faucetConfig}.balance - balance_check.awarded_amount,
             updated_at = ${now}
           FROM balance_check
           WHERE ${faucetConfig}.id = balance_check.id
@@ -556,14 +556,14 @@ export class DatabaseStorage implements IStorage {
             balance_check.daily_limit - (balance_check.current_distributed + balance_check.awarded_amount) as remaining_pool,
             balance_check.daily_limit,
             balance_check.current_distributed + balance_check.awarded_amount as daily_distributed,
-            balance_check.balance - balance_check.awarded_amount as balance
+            balance_check.balance - balance_check.awarded_amount as final_balance
         )
         SELECT 
           awarded_amount,
           remaining_pool,
           daily_limit,
           daily_distributed,
-          balance
+          final_balance
         FROM faucet_update
       `);
       
@@ -657,7 +657,7 @@ export class DatabaseStorage implements IStorage {
           await tx.execute(sql`
             UPDATE ${faucetConfig} 
             SET 
-              balance = balance + ${claimAmount},
+              balance = ${faucetConfig}.balance + ${claimAmount},
               daily_distributed = GREATEST(daily_distributed - ${claimAmount}, 0),
               updated_at = ${new Date()}
             WHERE id = (SELECT id FROM ${faucetConfig} LIMIT 1)
