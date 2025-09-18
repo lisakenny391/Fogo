@@ -470,13 +470,13 @@ export class DatabaseStorage implements IStorage {
     // Transaction-based claim scaling
     let claimAmount: string;
     
-    if (transactionCount < 70) {
+    if (transactionCount < 50) {
       return {
         amount: "0",
         eligible: false,
         reason: "Not eligible"
       };
-    } else if (transactionCount >= 70 && transactionCount < 160) {
+    } else if (transactionCount >= 50 && transactionCount < 160) {
       claimAmount = "0.2";
     } else if (transactionCount >= 160 && transactionCount < 400) {
       claimAmount = "0.5";
@@ -532,13 +532,13 @@ export class DatabaseStorage implements IStorage {
       return { success: false, error: "Not eligible" };
     }
     
-    if (transactionCount < 70) {
+    if (transactionCount < 50) {
       return { success: false, error: "Not eligible" };
     }
     
     // Calculate base claim amount based on transaction count
     let baseClaimAmount: string;
-    if (transactionCount >= 70 && transactionCount < 160) {
+    if (transactionCount >= 50 && transactionCount < 160) {
       baseClaimAmount = "0.2";
     } else if (transactionCount >= 160 && transactionCount < 400) {
       baseClaimAmount = "0.5";
