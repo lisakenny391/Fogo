@@ -18,7 +18,7 @@ import {
 } from "@solana/spl-token";
 import bs58 from "bs58";
 import { createHash } from "crypto";
-import { bonusTokenMint } from "./config";
+import { getBonusTokenMint } from "./config";
 
 export class Web3Service {
   private connection!: Connection;
@@ -263,7 +263,7 @@ export class Web3Service {
       }
       
       // Get bonus token mint
-      const mintPublicKey = new PublicKey(bonusTokenMint);
+      const mintPublicKey = new PublicKey(getBonusTokenMint());
       
       // Get or create associated token accounts
       const fromTokenAccount = await getOrCreateAssociatedTokenAccount(

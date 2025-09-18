@@ -1,14 +1,41 @@
-// Configuration for environment variables
+// Dynamic configuration functions that read from environment variables each time
+// This allows real-time changes without application restart
+
+// Dynamic configuration getters
+export function getFogoToBonusRate(): number {
+  const value = process.env.FOGO_TO_BONUS_RATE;
+  if (!value) {
+    throw new Error("FOGO_TO_BONUS_RATE environment variable is required");
+  }
+  const rate = parseFloat(value);
+  if (isNaN(rate) || rate <= 0) {
+    throw new Error("FOGO_TO_BONUS_RATE must be a positive number");
+  }
+  return rate;
+}
+
+export function getDailyPoolLimit(): number {
+  const value = process.env.DAILY_POOL_LIMIT;
+  if (!value) {
+    throw new Error("DAILY_POOL_LIMIT environment variable is required");
+  }
+  const limit = parseFloat(value);
+  if (isNaN(limit) || limit <= 0) {
+    throw new Error("DAILY_POOL_LIMIT must be a positive number");
+  }
+  return limit;
+}
+
+export function getBonusTokenMint(): string {
+  const value = process.env.BONUS_TOKEN_MINT;
+  if (!value) {
+    throw new Error("BONUS_TOKEN_MINT environment variable is required");
+  }
+  return value;
+}
+
+// Static configuration values that don't change
 export const config = {
-  // Conversion rate from FOGO to Bonus tokens (default: 1 FOGO → 6627.974874249 BONUS)
-  fogoToBonusRate: parseFloat(process.env.FOGO_TO_BONUS_RATE || "6627.974874249"),
-  
-  // Daily pool limit in FOGO (default: 300)
-  dailyPoolLimit: parseFloat(process.env.DAILY_POOL_LIMIT || "300"),
-  
-  // Bonus token mint address
-  bonusTokenMint: process.env.BONUS_TOKEN_MINT || "B7mVgAvW7i2wkcDS6WNCmNYi8FTUWBTScJk3vZ55JN4K",
-  
   // Database URL
   databaseUrl: process.env.DATABASE_URL,
   
@@ -31,26 +58,25 @@ export const config = {
       throw new Error("DATABASE_URL environment variable is required");
     }
     
-    if (isNaN(this.fogoToBonusRate) || this.fogoToBonusRate <= 0) {
-      throw new Error("FOGO_TO_BONUS_RATE must be a positive number");
+    // Validate dynamic config values
+    try {
+      const fogoToBonusRate = getFogoToBonusRate();
+      const dailyPoolLimit = getDailyPoolLimit();
+      const bonusTokenMint = getBonusTokenMint();
+      
+      console.log("✅ Configuration validated successfully");
+      console.log(`   FOGO to Bonus Rate: ${fogoToBonusRate}`);
+      console.log(`   Daily Pool Limit: ${dailyPoolLimit} FOGO`);
+      console.log(`   Bonus Token Mint: ${bonusTokenMint}`);
+    } catch (error) {
+      console.error("❌ Dynamic configuration validation failed:", (error as Error).message);
+      throw error;
     }
-    
-    if (isNaN(this.dailyPoolLimit) || this.dailyPoolLimit <= 0) {
-      throw new Error("DAILY_POOL_LIMIT must be a positive number");
-    }
-    
-    console.log("✅ Configuration validated successfully");
-    console.log(`   FOGO to Bonus Rate: ${this.fogoToBonusRate}`);
-    console.log(`   Daily Pool Limit: ${this.dailyPoolLimit} FOGO`);
-    console.log(`   Bonus Token Mint: ${this.bonusTokenMint}`);
   }
 };
 
-// Export individual values for convenience
+// Export individual static values for convenience
 export const {
-  fogoToBonusRate,
-  dailyPoolLimit,
-  bonusTokenMint,
   databaseUrl,
   fogoRpcUrl,
   solanaRpcUrl,
@@ -58,3 +84,8 @@ export const {
   port,
   nodeEnv
 } = config;
+
+// Legacy exports removed - use the dynamic function versions above instead:
+// - getFogoToBonusRate()
+// - getDailyPoolLimit() 
+// - getBonusTokenMint()

@@ -5,7 +5,7 @@ import { insertClaimSchema, insertRateLimitSchema } from "@shared/schema";
 import { z } from "zod";
 import { createHash } from "crypto";
 import { web3Service } from "./web3Service";
-import { fogoToBonusRate, bonusTokenMint } from "./config";
+import { getFogoToBonusRate, getBonusTokenMint } from "./config";
 
 // Helper functions for Fogo testnet faucet
 
@@ -386,8 +386,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalBonusDistributed,
         totalBonusClaims: stats?.totalBonusClaims || 0,
         lastUpdated: stats?.lastUpdated || null,
-        conversionRate: fogoToBonusRate,
-        bonusTokenMint: bonusTokenMint
+        conversionRate: getFogoToBonusRate(),
+        bonusTokenMint: getBonusTokenMint()
       });
     } catch (error) {
       console.error("Bonus stats error:", error);

@@ -3,7 +3,7 @@ import { users, claims, faucetConfig, rateLimits, walletEligibility, bonusClaims
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { dailyPoolLimit, fogoToBonusRate } from "./config";
+import { getDailyPoolLimit, getFogoToBonusRate } from "./config";
 
 // Storage interface for faucet operations
 export interface IStorage {
@@ -77,7 +77,7 @@ export class DatabaseStorage implements IStorage {
       const now = new Date();
       await db.insert(faucetConfig).values({
         balance: "1000000",
-        dailyLimit: dailyPoolLimit.toString(), // Use configurable daily pool limit from env
+        dailyLimit: getDailyPoolLimit().toString(), // Use configurable daily pool limit from env
         dailyDistributed: "0",
         dailyResetDate: now,
         isActive: true,
@@ -714,8 +714,9 @@ export class DatabaseStorage implements IStorage {
 
   async calculateBonusAmount(fogoAmount: string): Promise<{ bonusAmount: string; conversionRate: string }> {
     const fogoFloat = parseFloat(fogoAmount);
-    const conversionRate = fogoToBonusRate.toString();
-    const bonusAmount = (fogoFloat * fogoToBonusRate).toString();
+    const rate = getFogoToBonusRate();
+    const conversionRate = rate.toString();
+    const bonusAmount = (fogoFloat * rate).toString();
     
     return {
       bonusAmount,
