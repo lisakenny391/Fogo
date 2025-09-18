@@ -384,28 +384,37 @@ export class DatabaseStorage implements IStorage {
   
   // Daily pool management methods
   async getRemainingDailyPool(): Promise<{ remaining: string; total: string; isExhausted: boolean }> {
+    // Always read the current daily limit from environment variables (dynamic)
+    const envDailyLimit = getDailyPoolLimit();
+    const envDailyLimitStr = envDailyLimit.toString();
+    
     // Use SQL arithmetic to calculate remaining pool precisely with proper UTC reset logic
     const now = new Date();
     const [result] = await db.select({
       remaining: sql<string>`GREATEST(
-        CAST(${faucetConfig.dailyLimit} AS DECIMAL) - CASE 
+        CAST(${envDailyLimitStr} AS DECIMAL) - CASE 
           WHEN date_trunc('day', ${faucetConfig.dailyResetDate} AT TIME ZONE 'UTC') < date_trunc('day', ${now} AT TIME ZONE 'UTC')
           THEN 0 
           ELSE CAST(${faucetConfig.dailyDistributed} AS DECIMAL)
         END, 0
       )`,
-      total: faucetConfig.dailyLimit
+      distributed: sql<string>`CASE 
+        WHEN date_trunc('day', ${faucetConfig.dailyResetDate} AT TIME ZONE 'UTC') < date_trunc('day', ${now} AT TIME ZONE 'UTC')
+        THEN 0 
+        ELSE CAST(${faucetConfig.dailyDistributed} AS DECIMAL)
+      END`
     }).from(faucetConfig).limit(1);
     
     if (!result) {
-      return { remaining: "0", total: "300", isExhausted: true };
+      // If no config found, return default values based on ENV
+      return { remaining: envDailyLimitStr, total: envDailyLimitStr, isExhausted: false };
     }
     
     const remainingAmount = parseFloat(result.remaining);
     
     return {
       remaining: remainingAmount.toFixed(8),
-      total: result.total,
+      total: envDailyLimitStr, // Always return current ENV limit as total
       isExhausted: remainingAmount <= 0
     };
   }
@@ -451,10 +460,14 @@ export class DatabaseStorage implements IStorage {
       claimAmount = "3.0";
     }
     
+    // Always read the current daily limit from environment variables (dynamic)
+    const envDailyLimit = getDailyPoolLimit();
+    const envDailyLimitStr = envDailyLimit.toString();
+    
     // Use SQL to atomically check pool and calculate final amount
     const [result] = await db.select({
-      remaining: sql<string>`GREATEST(CAST(${faucetConfig.dailyLimit} AS DECIMAL) - CAST(${faucetConfig.dailyDistributed} AS DECIMAL), 0)`,
-      finalAmount: sql<string>`LEAST(CAST(${claimAmount} AS DECIMAL), GREATEST(CAST(${faucetConfig.dailyLimit} AS DECIMAL) - CAST(${faucetConfig.dailyDistributed} AS DECIMAL), 0))`
+      remaining: sql<string>`GREATEST(CAST(${envDailyLimitStr} AS DECIMAL) - CAST(${faucetConfig.dailyDistributed} AS DECIMAL), 0)`,
+      finalAmount: sql<string>`LEAST(CAST(${claimAmount} AS DECIMAL), GREATEST(CAST(${envDailyLimitStr} AS DECIMAL) - CAST(${faucetConfig.dailyDistributed} AS DECIMAL), 0))`
     }).from(faucetConfig).limit(1);
     
     if (!result) {
@@ -509,6 +522,10 @@ export class DatabaseStorage implements IStorage {
       baseClaimAmount = "3.0";
     }
     
+    // Always read the current daily limit from environment variables (dynamic)
+    const envDailyLimit = getDailyPoolLimit();
+    const envDailyLimitStr = envDailyLimit.toString();
+    
     // Start atomic transaction
     return await db.transaction(async (tx) => {
       const now = new Date();
@@ -516,12 +533,13 @@ export class DatabaseStorage implements IStorage {
       // We will rely on the unique constraint to prevent duplicate pending claims when inserting
       
       // Atomic CTE: Lock config row, check/reset daily pool, compute awarded amount, update distributed, and return all needed values
+      // Use ENV daily limit instead of database daily_limit column
       const result = await tx.execute(sql`
         WITH config_update AS (
           SELECT 
             id,
             balance,
-            daily_limit,
+            ${envDailyLimitStr} as env_daily_limit,
             daily_distributed,
             daily_reset_date,
             -- Check if we need to reset (UTC midnight comparison)
@@ -530,11 +548,11 @@ export class DatabaseStorage implements IStorage {
               THEN 0 -- Reset distributed amount
               ELSE daily_distributed
             END as current_distributed,
-            -- Calculate the award amount (base claim capped by remaining pool)
+            -- Calculate the award amount (base claim capped by remaining pool from ENV limit)
             LEAST(
               CAST(${baseClaimAmount} AS DECIMAL),
               GREATEST(
-                daily_limit - CASE 
+                CAST(${envDailyLimitStr} AS DECIMAL) - CASE 
                   WHEN date_trunc('day', daily_reset_date AT TIME ZONE 'UTC') < date_trunc('day', ${now} AT TIME ZONE 'UTC')
                   THEN 0 
                   ELSE daily_distributed
@@ -567,8 +585,8 @@ export class DatabaseStorage implements IStorage {
           WHERE ${faucetConfig}.id = balance_check.id
           RETURNING 
             balance_check.awarded_amount,
-            balance_check.daily_limit - (balance_check.current_distributed + balance_check.awarded_amount) as remaining_pool,
-            balance_check.daily_limit,
+            balance_check.env_daily_limit - (balance_check.current_distributed + balance_check.awarded_amount) as remaining_pool,
+            balance_check.env_daily_limit as daily_limit,
             balance_check.current_distributed + balance_check.awarded_amount as daily_distributed,
             balance_check.balance - balance_check.awarded_amount as final_balance
         )
