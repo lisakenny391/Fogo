@@ -5,6 +5,8 @@ import * as schema from "@shared/schema";
 // Disable WebSocket for serverless compatibility (Netlify Functions)
 // Use HTTP connection instead for better serverless performance
 neonConfig.fetchConnectionCache = true;
+neonConfig.useSecureWebSocket = false;
+neonConfig.pipelineConnect = false;
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
