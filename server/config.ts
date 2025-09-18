@@ -34,6 +34,28 @@ export function getBonusTokenMint(): string {
   return value;
 }
 
+// Tiered FOGO caps based on transaction count
+export const TIERED_CAPS = {
+  LOW_ACTIVITY: { maxTx: 80, cap: 20 },    // New users: <80 tx, 20 FOGO cap
+  MID_ACTIVITY: { maxTx: 400, cap: 40 },   // Regular users: 80-400 tx, 40 FOGO cap  
+  HIGH_ACTIVITY: { maxTx: Infinity, cap: 60 } // Power users: >400 tx, 60 FOGO cap
+};
+
+// Faucet constants
+export const FAUCET_AMOUNT = 3;
+export const LEGACY_BALANCE_CAP = 10; // Legacy cap, now using tiered caps
+
+// Function to get appropriate cap based on transaction count
+export function getBalanceCapForTxCount(txCount: number): number {
+  if (txCount < TIERED_CAPS.LOW_ACTIVITY.maxTx) {
+    return TIERED_CAPS.LOW_ACTIVITY.cap;
+  } else if (txCount < TIERED_CAPS.MID_ACTIVITY.maxTx) {
+    return TIERED_CAPS.MID_ACTIVITY.cap;
+  } else {
+    return TIERED_CAPS.HIGH_ACTIVITY.cap;
+  }
+}
+
 // Static configuration values that don't change
 export const config = {
   // Database URL

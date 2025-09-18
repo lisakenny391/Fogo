@@ -18,7 +18,7 @@ import {
 } from "@solana/spl-token";
 import bs58 from "bs58";
 import { createHash } from "crypto";
-import { getBonusTokenMint } from "./config";
+import { getBonusTokenMint, getBalanceCapForTxCount, TIERED_CAPS } from "./config";
 
 export class Web3Service {
   private connection!: Connection;
@@ -32,7 +32,7 @@ export class Web3Service {
   
   // Configuration constants
   private readonly TX_CAP = 3000;
-  private readonly BALANCE_CAP = 10; // 10 FOGO eligibility limit
+  // Balance caps now use tiered system based on transaction count - see getBalanceCapForTxCount()
 
   constructor() {
     // Initialize will be called when needed
@@ -41,9 +41,9 @@ export class Web3Service {
   private initialize() {
     if (this.isInitialized) return;
 
-    // Use enhanced Flux RPC endpoint if available, fallback to default
-    const enhancedFluxRpc = process.env.ENHANCED_FLUX_RPC_URL;
-    const rpcUrl = enhancedFluxRpc || process.env.FOGO_RPC_URL || "https://testnet.fogo.io";
+    // Temporarily disable enhanced Flux RPC due to parsing issues - use fallback
+    const enhancedFluxRpc = null; // process.env.ENHANCED_FLUX_RPC_URL;
+    const rpcUrl = process.env.FOGO_RPC_URL || "https://testnet.fogo.io";
     
     if (enhancedFluxRpc) {
       console.log("Using enhanced Flux RPC endpoint for improved reliability");
@@ -181,20 +181,23 @@ export class Web3Service {
       const fogoNative = parseFloat(nativeBalance);
       const fogoContract = parseFloat(contractBalance);
       const totalFogo = fogoNative + fogoContract;
+      // Get appropriate balance cap based on transaction count (tiered system)
+      const balanceCap = getBalanceCapForTxCount(transactionCount);
+      
       // Determine eligibility and exceeded type - any cap violation makes wallet ineligible
       let eligible = true;
       let exceededType: string | undefined;
       let exceedsCap = false;
       
-      if (fogoNative > this.BALANCE_CAP) {
+      if (fogoNative > balanceCap) {
         eligible = false;
         exceededType = "native";
         exceedsCap = true;
-      } else if (fogoContract > this.BALANCE_CAP) {
+      } else if (fogoContract > balanceCap) {
         eligible = false;
         exceededType = "contract";
         exceedsCap = true;
-      } else if (totalFogo > this.BALANCE_CAP) {
+      } else if (totalFogo > balanceCap) {
         eligible = false;
         exceededType = "total";
         exceedsCap = true;
@@ -206,6 +209,7 @@ export class Web3Service {
         fogoNative: nativeBalance,
         fogoContract: contractBalance,
         totalFogo: totalFogo.toString(),
+        balanceCap, // Include the cap used for this wallet
         exceedsCap,
         eligible,
         exceededType
@@ -289,13 +293,12 @@ export class Web3Service {
 
   /**
    * Enhanced dual FOGO balance check using the new contract addresses.
-   * Maintains backward compatibility while using enhanced RPC endpoint.
+   * Returns raw balance data without cap checking (use checkWallet() for cap logic).
    */
   async getEnhancedFogoBalances(walletAddress: string): Promise<{
     fogoNative: string;
     fogoContract: string;
     totalFogo: string;
-    exceedsCap: boolean;
   }> {
     try {
       this.initialize();
@@ -310,13 +313,11 @@ export class Web3Service {
       const fogoNative = parseFloat(nativeBalance);
       const fogoContract = parseFloat(contractBalance);
       const totalFogo = fogoNative + fogoContract;
-      const exceedsCap = totalFogo > this.BALANCE_CAP || fogoNative > this.BALANCE_CAP || fogoContract > this.BALANCE_CAP;
       
       return {
         fogoNative: nativeBalance,
         fogoContract: contractBalance,
-        totalFogo: totalFogo.toString(),
-        exceedsCap
+        totalFogo: totalFogo.toString()
       };
     } catch (error: any) {
       console.error("Error in enhanced FOGO balance check:", error);
