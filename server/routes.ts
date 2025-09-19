@@ -350,7 +350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Continue with FOGO claim even if bonus claim creation fails
       }
 
-      // Return success immediately with claim info
+      // Return success immediately with claim info, then process blockchain transactions asynchronously
       res.json({ 
         claimId: claim.id, 
         amount: claimedAmount,
@@ -360,63 +360,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Claim created successfully. Blockchain transactions processing..." 
       });
       
-      // In Netlify environment, trigger background function for processing
-      // In local development, process immediately
-      if (process.env.NODE_ENV === "production") {
-        // For Netlify production, trigger the background function
+      // Process real blockchain transactions asynchronously
+      setTimeout(async () => {
+        let fogoTxHash: string | null = null;
+        let bonusTxHash: string | null = null;
+        let fogoSuccess = false;
+        let bonusSuccess = false;
+        
         try {
-          // Build absolute URL for background function (support deploy previews)
-          const baseUrl = process.env.DEPLOY_PRIME_URL || process.env.URL || `${req.protocol}://${req.get('host')}`;
-          const backgroundUrl = `${baseUrl}/.netlify/functions/process-claim-background`;
+          // Send FOGO tokens first
+          fogoTxHash = await web3Service.sendTokens(walletAddress, claimedAmount);
+          console.log(`FOGO transaction sent: ${fogoTxHash}`);
+          fogoSuccess = true;
           
-          const response = await fetch(backgroundUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              claimId: claim.id, 
-              bonusClaimId: bonusClaim?.id 
-            }),
-            signal: AbortSignal.timeout(5000) // 5 second timeout
-          });
-          
-          if (response.ok || response.status === 202) {
-            console.log(`Claim ${claim.id} triggered for background processing`);
-          } else {
-            console.error(`Background processing trigger failed with status ${response.status} for claim ${claim.id}`);
+          // Send bonus tokens if bonus claim was created
+          if (bonusClaim) {
+            try {
+              bonusTxHash = await web3Service.sendBonusTokens(walletAddress, bonusAmount);
+              console.log(`Bonus token transaction sent: ${bonusTxHash}`);
+              bonusSuccess = true;
+            } catch (bonusError) {
+              console.error(`Failed to send bonus tokens for claim ${claim.id}:`, bonusError);
+              bonusSuccess = false;
+            }
           }
-        } catch (fetchError) {
-          console.error(`Failed to trigger background processing for claim ${claim.id}:`, fetchError);
+          
+          // Finalize FOGO claim as successful
+          await storage.finalizeClaim(claim.id, { success: fogoSuccess, txHash: fogoTxHash });
+          
+          // Finalize bonus claim if it was created
+          if (bonusClaim) {
+            await storage.finalizeBonusClaim(bonusClaim.id, { success: bonusSuccess, txHash: bonusTxHash });
+          }
+          
+          console.log(`Claim ${claim.id} completed - FOGO: ${fogoSuccess ? 'success' : 'failed'}, Bonus: ${bonusSuccess ? 'success' : 'failed'}`);
+        } catch (error) {
+          console.error(`Failed to complete FOGO claim ${claim.id}:`, error);
+          
+          // Finalize FOGO claim as failed with compensation to restore daily pool
+          await storage.finalizeClaim(claim.id, { success: false, txHash: fogoTxHash });
+          
+          // Finalize bonus claim as failed if it was created
+          if (bonusClaim) {
+            await storage.finalizeBonusClaim(bonusClaim.id, { success: false, txHash: bonusTxHash });
+          }
         }
-      } else {
-        // For local development, process immediately in background with proper finalization
-        setImmediate(async () => {
-          try {
-            console.log(`Processing claim ${claim.id} locally...`);
-            const fogoTxHash = await web3Service.sendTokens(walletAddress, claimedAmount);
-            
-            // Use proper finalization for FOGO claim
-            await storage.finalizeClaim(claim.id, { success: true, txHash: fogoTxHash });
-            
-            if (bonusClaim) {
-              try {
-                const bonusTxHash = await web3Service.sendBonusTokens(walletAddress, bonusAmount);
-                await storage.finalizeBonusClaim(bonusClaim.id, { success: true, txHash: bonusTxHash });
-              } catch (bonusError) {
-                console.error(`Failed to send bonus tokens for claim ${bonusClaim.id}:`, bonusError);
-                await storage.finalizeBonusClaim(bonusClaim.id, { success: false, txHash: null });
-              }
-            }
-            
-            console.log(`Claim ${claim.id} processed successfully`);
-          } catch (error) {
-            console.error(`Failed to process claim ${claim.id}:`, error);
-            await storage.finalizeClaim(claim.id, { success: false, txHash: null });
-            if (bonusClaim) {
-              await storage.finalizeBonusClaim(bonusClaim.id, { success: false, txHash: null });
-            }
-          }
-        });
-      }
+      }, 100); // Small delay to process blockchain transactions
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid request format" });
