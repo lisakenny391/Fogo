@@ -3,13 +3,13 @@
 
 // Dynamic configuration getters
 export function getFogoToBonusRate(): number {
-  const value = process.env.FOGO_TO_BONUS_RATE;
+  const value = process.env.FOGO_TO_BONUS;
   if (!value) {
-    throw new Error("FOGO_TO_BONUS_RATE environment variable is required");
+    throw new Error("FOGO_TO_BONUS environment variable is required");
   }
   const rate = parseFloat(value);
   if (isNaN(rate) || rate <= 0) {
-    throw new Error("FOGO_TO_BONUS_RATE must be a positive number");
+    throw new Error("FOGO_TO_BONUS must be a positive number");
   }
   return rate;
 }
