@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { storage } from '../server/storage';
 import { getFogoToBonusRate } from '../server/config';
-import { getFromCache, setCache, setCORSHeaders } from './_shared';
+import { getFromCache, setCache, setCORSHeaders } from '../lib/shared';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCORSHeaders(res);

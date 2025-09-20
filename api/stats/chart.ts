@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { storage } from '../../server/storage';
-import { setCORSHeaders } from '../_shared';
+import { setCORSHeaders } from '../../lib/shared';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCORSHeaders(res);

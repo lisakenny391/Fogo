@@ -4,7 +4,7 @@
     {
       "src": "client/package.json",
       "use": "@vercel/static-build",
-      "config": { "distDir": "../dist/public" }
+      "config": { "distDir": "dist" }
     }
   ],
   "functions": {
@@ -14,8 +14,8 @@
   },
   "rewrites": [
     {
-      "source": "/(.*)",
-      "destination": "/dist/public/$1"
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ]
 }

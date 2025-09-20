@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { storage } from '../../server/storage';
 import { z } from 'zod';
-import { checkEligibilitySchema, isEligibleForClaim, setCORSHeaders } from '../_shared';
+import { checkEligibilitySchema, isEligibleForClaim, setCORSHeaders } from '../../lib/shared';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCORSHeaders(res);

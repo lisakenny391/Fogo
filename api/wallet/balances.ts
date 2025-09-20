@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { web3Service } from '../../server/web3Service';
 import { z } from 'zod';
-import { checkEligibilitySchema, setCORSHeaders } from '../_shared';
+import { checkEligibilitySchema, setCORSHeaders } from '../../lib/shared';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCORSHeaders(res);

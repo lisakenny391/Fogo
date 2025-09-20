@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { storage } from '../../server/storage';
 import { web3Service } from '../../server/web3Service';
 import { z } from 'zod';
-import { claimTokensSchema, checkDualFogoEligibility, getRealTransactionCount, getRealWalletBalance, setCORSHeaders } from '../_shared';
+import { claimTokensSchema, checkDualFogoEligibility, getRealTransactionCount, getRealWalletBalance, setCORSHeaders } from '../../lib/shared';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCORSHeaders(res);
@@ -69,56 +69,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error("Failed to create bonus claim:", error);
     }
 
-    // Return success immediately, then process blockchain transactions asynchronously
-    res.json({ 
-      claimId: claim.id, 
-      amount: claimedAmount,
-      bonusClaimId: bonusClaim?.id,
-      bonusAmount,
-      remaining: claimResult.remaining || "0",
-      message: "Claim created successfully. Blockchain transactions processing..." 
-    });
+    // Process blockchain transactions synchronously before responding
+    let fogoTxHash: string | null = null;
+    let bonusTxHash: string | null = null;
+    let fogoSuccess = false;
+    let bonusSuccess = false;
     
-    // Process blockchain transactions asynchronously
-    setTimeout(async () => {
-      let fogoTxHash: string | null = null;
-      let bonusTxHash: string | null = null;
-      let fogoSuccess = false;
-      let bonusSuccess = false;
+    try {
+      // Send FOGO tokens first
+      fogoTxHash = await web3Service.sendTokens(walletAddress, claimedAmount);
+      console.log(`FOGO transaction sent: ${fogoTxHash}`);
+      fogoSuccess = true;
       
-      try {
-        fogoTxHash = await web3Service.sendTokens(walletAddress, claimedAmount);
-        console.log(`FOGO transaction sent: ${fogoTxHash}`);
-        fogoSuccess = true;
-        
-        if (bonusClaim) {
-          try {
-            bonusTxHash = await web3Service.sendBonusTokens(walletAddress, bonusAmount);
-            console.log(`Bonus token transaction sent: ${bonusTxHash}`);
-            bonusSuccess = true;
-          } catch (bonusError) {
-            console.error(`Failed to send bonus tokens for claim ${claim.id}:`, bonusError);
-            bonusSuccess = false;
-          }
-        }
-        
-        await storage.finalizeClaim(claim.id, { success: fogoSuccess, txHash: fogoTxHash });
-        
-        if (bonusClaim) {
-          await storage.finalizeBonusClaim(bonusClaim.id, { success: bonusSuccess, txHash: bonusTxHash });
-        }
-        
-        console.log(`Claim ${claim.id} completed - FOGO: ${fogoSuccess ? 'success' : 'failed'}, Bonus: ${bonusSuccess ? 'success' : 'failed'}`);
-      } catch (error) {
-        console.error(`Failed to complete FOGO claim ${claim.id}:`, error);
-        
-        await storage.finalizeClaim(claim.id, { success: false, txHash: fogoTxHash });
-        
-        if (bonusClaim) {
-          await storage.finalizeBonusClaim(bonusClaim.id, { success: false, txHash: bonusTxHash });
+      // Send bonus tokens if bonus claim was created
+      if (bonusClaim) {
+        try {
+          bonusTxHash = await web3Service.sendBonusTokens(walletAddress, bonusAmount);
+          console.log(`Bonus token transaction sent: ${bonusTxHash}`);
+          bonusSuccess = true;
+        } catch (bonusError) {
+          console.error(`Failed to send bonus tokens for claim ${claim.id}:`, bonusError);
+          bonusSuccess = false;
         }
       }
-    }, 100);
+      
+      // Finalize claims with transaction results
+      await storage.finalizeClaim(claim.id, { success: fogoSuccess, txHash: fogoTxHash });
+      
+      if (bonusClaim) {
+        await storage.finalizeBonusClaim(bonusClaim.id, { success: bonusSuccess, txHash: bonusTxHash });
+      }
+      
+      console.log(`Claim ${claim.id} completed - FOGO: ${fogoSuccess ? 'success' : 'failed'}, Bonus: ${bonusSuccess ? 'success' : 'failed'}`);
+      
+      return res.json({ 
+        claimId: claim.id, 
+        amount: claimedAmount,
+        bonusClaimId: bonusClaim?.id,
+        bonusAmount,
+        remaining: claimResult.remaining || "0",
+        transactionHash: fogoTxHash,
+        bonusTransactionHash: bonusTxHash,
+        success: fogoSuccess,
+        bonusSuccess,
+        message: "Claim processed successfully" 
+      });
+      
+    } catch (error) {
+      console.error(`Failed to complete claim:`, error);
+      
+      // Finalize claims as failed
+      await storage.finalizeClaim(claim.id, { success: false, txHash: fogoTxHash });
+      
+      if (bonusClaim) {
+        await storage.finalizeBonusClaim(bonusClaim.id, { success: false, txHash: bonusTxHash });
+      }
+      
+      return res.status(500).json({ 
+        error: "Failed to process blockchain transactions",
+        claimId: claim.id,
+        amount: claimedAmount
+      });
+    }
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid request format" });
