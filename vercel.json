@@ -1,14 +1,21 @@
 {
   "version": 2,
+  "builds": [
+    {
+      "src": "client/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "../dist/public" }
+    }
+  ],
   "functions": {
-    "api/index.ts": {
+    "api/**/*.ts": {
       "maxDuration": 30
     }
   },
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index.ts"
+      "source": "/(.*)",
+      "destination": "/dist/public/$1"
     }
   ]
 }
