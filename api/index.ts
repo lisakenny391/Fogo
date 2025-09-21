@@ -1,10 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import express from 'express';
-import { storage } from '../server/storage.js';
-import { insertClaimSchema } from '../shared/schema.js';
+import { storage } from '../server/storage';
+import { insertClaimSchema } from '../shared/schema';
 import { z } from 'zod';
-import { web3Service } from '../server/web3Service.js';
-import { getFogoToBonusRate, getBonusTokenMint } from '../server/config.js';
+import { sql } from 'drizzle-orm';
+import { web3Service } from '../server/web3Service';
+import { getFogoToBonusRate, getBonusTokenMint } from '../server/config';
 
 // Performance optimization: In-memory cache for expensive operations
 const cache = new Map<string, { data: any; expires: number }>();
@@ -559,6 +560,38 @@ app.get('/api/activity/recent', async (req, res) => {
   } catch (error) {
     console.error("Recent activity error:", error);
     res.status(500).json({ error: "Failed to get recent activity" });
+  }
+});
+
+// Debug endpoint to test database connection
+app.get('/api/debug/database', async (req, res) => {
+  try {
+    // Simple database test
+    const { getDb } = await import('../lib/db');
+    const db = getDb();
+    
+    // Try a simple query
+    const result = await db.execute(sql`SELECT 1 as test`);
+    
+    res.json({
+      success: true,
+      message: "Database connection successful",
+      envVarsPresent: {
+        DATABASE_URL: !!process.env.DATABASE_URL,
+        POSTGRES_URL: !!process.env.POSTGRES_URL
+      },
+      result: result.rows
+    });
+  } catch (error: any) {
+    console.error("Database debug error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Database connection failed",
+      envVarsPresent: {
+        DATABASE_URL: !!process.env.DATABASE_URL,
+        POSTGRES_URL: !!process.env.POSTGRES_URL
+      }
+    });
   }
 });
 

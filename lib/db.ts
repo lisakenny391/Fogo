@@ -2,7 +2,7 @@ import { Pool, neonConfig } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-serverless';
 import { sql } from 'drizzle-orm';
 import ws from 'ws';
-import * as schema from '../shared/schema.js';
+import * as schema from '../shared/schema';
 
 // Configure WebSocket constructor for Neon serverless driver
 neonConfig.webSocketConstructor = ws;
@@ -23,7 +23,15 @@ export function getDb(): ReturnType<typeof drizzle> {
   }
 
   if (!_db) {
-    _pool = new Pool({ connectionString: databaseUrl });
+    // Configure connection pool for serverless environments
+    _pool = new Pool({ 
+      connectionString: databaseUrl,
+      // Optimize for serverless - shorter timeouts and smaller pool
+      max: 1, // Single connection for serverless functions
+      idleTimeoutMillis: 0, // Close connections immediately when idle
+      connectionTimeoutMillis: 5000, // 5 second connection timeout
+      statement_timeout: 10000, // 10 second query timeout
+    });
     _db = drizzle({ client: _pool, schema });
   }
   
