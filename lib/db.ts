@@ -1,9 +1,13 @@
-import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
+import { Pool, neonConfig } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import ws from 'ws';
 import * as schema from '../shared/schema';
 
+// Configure WebSocket constructor for Neon serverless driver
+neonConfig.webSocketConstructor = ws;
+
 // Lazy-initialized singleton instances
-let _sql: ReturnType<typeof neon> | null = null;
+let _pool: Pool | null = null;
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export function getDb(): ReturnType<typeof drizzle> {
@@ -14,8 +18,8 @@ export function getDb(): ReturnType<typeof drizzle> {
   }
 
   if (!_db) {
-    _sql = neon(process.env.DATABASE_URL);
-    _db = drizzle({ client: _sql, schema });
+    _pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    _db = drizzle({ client: _pool, schema });
   }
   
   return _db!;
