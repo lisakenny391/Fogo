@@ -12,13 +12,12 @@ let _pool: Pool | null = null;
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export function getDb(): ReturnType<typeof drizzle> {
-  // Support both Vercel's standard variables and custom DATABASE_URL
-  // Note: SUPABASE_URL is the REST API URL, not a Postgres connection string
-  const databaseUrl = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  // TEMP: Hardcoded for Vercel testnet deployment – move back to env vars for production
+  const databaseUrl = 'postgresql://postgres.rdwfuxuiqnhgnomnrthy:vuQYe1s4BxjEQtXT@aws-1-us-east-1.pooler.supabase.com:6543/postgres';
   
   if (!databaseUrl) {
     throw new Error(
-      "POSTGRES_URL or DATABASE_URL must be set. Please configure your database credentials."
+      "Database URL must be configured. Please check your database credentials."
     );
   }
 
