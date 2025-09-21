@@ -1,20 +1,49 @@
-// ===== HARDCODED TESTNET CONFIG (permanent for testnet environment) =====
-// Hardcoded values for reliable Vercel deployment
+// ===== VERCEL-ONLY ENVIRONMENT CHECK =====
+function ensureVercelEnvironment(): void {
+  // Only allow running on Vercel, not Replit or other environments
+  if (!process.env.VERCEL && !process.env.VERCEL_ENV) {
+    throw new Error("This application is configured to run only on Vercel deployment environment");
+  }
+}
 
-// Hardcoded configuration getters for testnet
+// Dynamic configuration functions that read from environment variables
+// These values must be set in Vercel environment variables
 export function getFogoToBonusRate(): number {
-  // Hardcoded for testnet: 1 FOGO = 10 bonus tokens
-  return 10.0;
+  ensureVercelEnvironment();
+  
+  const value = process.env.FOGO_TO_BONUS;
+  if (!value) {
+    throw new Error("FOGO_TO_BONUS environment variable is required for Vercel deployment");
+  }
+  const rate = parseFloat(value);
+  if (isNaN(rate) || rate <= 0) {
+    throw new Error("FOGO_TO_BONUS must be a positive number");
+  }
+  return rate;
 }
 
 export function getDailyPoolLimit(): number {
-  // Hardcoded for testnet: 300 FOGO daily limit
-  return 300.0;
+  ensureVercelEnvironment();
+  
+  const value = process.env.DAILY_POOL_LIMIT;
+  if (!value) {
+    throw new Error("DAILY_POOL_LIMIT environment variable is required for Vercel deployment");
+  }
+  const limit = parseFloat(value);
+  if (isNaN(limit) || limit <= 0) {
+    throw new Error("DAILY_POOL_LIMIT must be a positive number");
+  }
+  return limit;
 }
 
 export function getBonusTokenMint(): string {
-  // Hardcoded for testnet: Using FOGO contract address as bonus token mint
-  return "B7mVgAvW7i2wkcDS6WNCmNYi8FTUWBTScJk3vZ55JN4K";
+  ensureVercelEnvironment();
+  
+  const value = process.env.BONUS_TOKEN_MINT;
+  if (!value) {
+    throw new Error("BONUS_TOKEN_MINT environment variable is required for Vercel deployment");
+  }
+  return value;
 }
 
 // Tiered FOGO caps based on transaction count

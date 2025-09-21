@@ -37,6 +37,16 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // ===== VERCEL-ONLY DEPLOYMENT CHECK =====
+  // Ensure this application only runs on Vercel, not Replit or other environments
+  if (!process.env.VERCEL && !process.env.VERCEL_ENV) {
+    console.error("❌ This application is configured to run only on Vercel deployment environment");
+    console.error("   Please deploy to Vercel to test the application");
+    process.exit(1);
+  }
+  
+  console.log("✅ Vercel environment detected - proceeding with startup");
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
