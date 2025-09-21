@@ -4,8 +4,8 @@
 // This is only for confirming database and RPC connectivity on Vercel
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Pool } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { sql } from 'drizzle-orm';
 
 // ⚠️ HARDCODED VALUES FOR DEBUGGING ONLY ⚠️

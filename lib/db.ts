@@ -1,40 +1,39 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { sql } from 'drizzle-orm';
-import ws from 'ws';
 import * as schema from '../shared/schema';
 
-// Configure WebSocket constructor for Neon serverless driver
-neonConfig.webSocketConstructor = ws;
+// ===== HARDCODED TESTNET CONFIG (permanent for testnet environment) =====
+export const DATABASE_URL = 'postgresql://postgres.rdwfuxuiqnhgnomnrthy:vuQYe1s4BxjEQtXT@aws-1-us-east-1.pooler.supabase.com:6543/postgres';
+
+// ===== DATABASE POOL =====
+export const pool = new Pool({
+  connectionString: DATABASE_URL,
+  max: 2, // Serverless-optimized: small pool to prevent connection exhaustion
+  idleTimeoutMillis: 0, // Close connections immediately when idle
+  connectionTimeoutMillis: 5000, // 5 second connection timeout
+  statement_timeout: 10000, // 10 second query timeout
+});
 
 // Lazy-initialized singleton instances
-let _pool: Pool | null = null;
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export function getDb(): ReturnType<typeof drizzle> {
-  // TEMP: Hardcoded for Vercel testnet deployment – move back to env vars for production
-  const databaseUrl = 'postgresql://postgres.rdwfuxuiqnhgnomnrthy:vuQYe1s4BxjEQtXT@aws-1-us-east-1.pooler.supabase.com:6543/postgres';
-  
-  if (!databaseUrl) {
-    throw new Error(
-      "Database URL must be configured. Please check your database credentials."
-    );
-  }
-
   if (!_db) {
-    // Configure connection pool for serverless environments
-    _pool = new Pool({ 
-      connectionString: databaseUrl,
-      // Optimize for serverless - shorter timeouts and smaller pool
-      max: 1, // Single connection for serverless functions
-      idleTimeoutMillis: 0, // Close connections immediately when idle
-      connectionTimeoutMillis: 5000, // 5 second connection timeout
-      statement_timeout: 10000, // 10 second query timeout
-    });
-    _db = drizzle({ client: _pool, schema });
+    _db = drizzle({ client: pool, schema });
   }
-  
-  return _db!;
+  return _db;
+}
+
+// Optional helper to run queries directly
+export async function query(text: string, params?: any[]) {
+  const client = await pool.connect();
+  try {
+    const res = await client.query(text, params);
+    return res;
+  } finally {
+    client.release();
+  }
 }
 
 // Health check function that tests database connections
@@ -47,13 +46,14 @@ export async function checkDatabaseHealth(): Promise<{
   let supabaseResult: { connected: boolean; configured: boolean } | undefined;
   let hasErrors = false;
 
-  // Test Drizzle connection
+  // Test Drizzle connection with hardcoded credentials
   try {
     const db = getDb();
     await db.execute(sql`SELECT 1`);
     drizzleConnected = true;
+    console.log('✅ Hardcoded database connection successful');
   } catch (err) {
-    console.error('Drizzle connection failed:', err);
+    console.error('❌ Hardcoded database connection failed:', err);
     hasErrors = true;
   }
 
