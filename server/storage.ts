@@ -1,6 +1,6 @@
 import { type User, type InsertUser, type Claim, type InsertClaim, type FaucetConfig, type InsertFaucetConfig, type RateLimit, type InsertRateLimit, type WalletEligibility, type InsertWalletEligibility, type BonusClaim, type InsertBonusClaim, type BonusDistributionStats, type InsertBonusDistributionStats } from "@shared/schema";
 import { users, claims, faucetConfig, rateLimits, walletEligibility, bonusClaims, bonusDistributionStats } from "@shared/schema";
-import { db } from "./db";
+import { getDb } from "../lib/db";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getDailyPoolLimit, getFogoToBonusRate } from "./config";
@@ -72,10 +72,10 @@ export class DatabaseStorage implements IStorage {
   // Initialize default faucet config if it doesn't exist
   private async ensureFaucetConfig(): Promise<void> {
     // Query directly to avoid infinite recursion
-    const [existing] = await db.select().from(faucetConfig).limit(1);
+    const [existing] = await getDb().select().from(faucetConfig).limit(1);
     if (!existing) {
       const now = new Date();
-      await db.insert(faucetConfig).values({
+      await getDb().insert(faucetConfig).values({
         balance: "1000000",
         dailyLimit: getDailyPoolLimit().toString(), // Use configurable daily pool limit from env
         dailyDistributed: "0",
@@ -89,23 +89,23 @@ export class DatabaseStorage implements IStorage {
 
   // User operations
   async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
+    const [user] = await getDb().select().from(users).where(eq(users.id, id));
     return user || undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
+    const [user] = await getDb().select().from(users).where(eq(users.username, username));
     return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
+    const [user] = await getDb().insert(users).values(insertUser).returning();
     return user;
   }
 
   // Claim operations
   async createClaim(insertClaim: InsertClaim): Promise<Claim> {
-    const [claim] = await db.insert(claims).values({
+    const [claim] = await getDb().insert(claims).values({
       ...insertClaim,
       status: insertClaim.status || "pending"
     }).returning();
@@ -113,12 +113,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClaimsByWallet(walletAddress: string): Promise<Claim[]> {
-    return await db.select().from(claims)
+    return await getDb().select().from(claims)
       .where(sql`LOWER(${claims.walletAddress}) = LOWER(${walletAddress})`);
   }
 
   async getRecentClaims(limit = 10): Promise<Claim[]> {
-    return await db.select().from(claims)
+    return await getDb().select().from(claims)
       .orderBy(desc(claims.createdAt))
       .limit(limit);
   }
@@ -132,7 +132,7 @@ export class DatabaseStorage implements IStorage {
       updateData.transactionHash = transactionHash;
     }
     
-    const [updatedClaim] = await db.update(claims)
+    const [updatedClaim] = await getDb().update(claims)
       .set(updateData)
       .where(eq(claims.id, id))
       .returning();
@@ -140,7 +140,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPendingClaimsByWallet(walletAddress: string): Promise<Claim[]> {
-    return await db.select().from(claims)
+    return await getDb().select().from(claims)
       .where(and(
         sql`LOWER(${claims.walletAddress}) = LOWER(${walletAddress})`,
         eq(claims.status, "pending")
@@ -167,7 +167,7 @@ export class DatabaseStorage implements IStorage {
 
   // Rate limiting operations
   async getRateLimit(walletAddress: string): Promise<RateLimit | undefined> {
-    const [rateLimit] = await db.select().from(rateLimits)
+    const [rateLimit] = await getDb().select().from(rateLimits)
       .where(sql`LOWER(${rateLimits.walletAddress}) = LOWER(${walletAddress})`);
     return rateLimit || undefined;
   }
@@ -177,7 +177,7 @@ export class DatabaseStorage implements IStorage {
     
     try {
       // Try to update existing rate limit first
-      const [updatedRateLimit] = await db.update(rateLimits)
+      const [updatedRateLimit] = await getDb().update(rateLimits)
         .set({
           lastClaim: new Date(),
           claimCount: insertRateLimit.claimCount || sql`${rateLimits.claimCount}`,
@@ -191,7 +191,7 @@ export class DatabaseStorage implements IStorage {
       }
       
       // If no existing record, create new one
-      const [rateLimit] = await db.insert(rateLimits).values({
+      const [rateLimit] = await getDb().insert(rateLimits).values({
         ...insertRateLimit,
         walletAddress: walletAddress,
         lastClaim: new Date(),
@@ -203,7 +203,7 @@ export class DatabaseStorage implements IStorage {
       const existingRateLimit = await this.getRateLimit(walletAddress);
       if (existingRateLimit) {
         // Update the existing record that was created concurrently
-        const [updatedRateLimit] = await db.update(rateLimits)
+        const [updatedRateLimit] = await getDb().update(rateLimits)
           .set({
             lastClaim: new Date(),
             claimCount: insertRateLimit.claimCount || existingRateLimit.claimCount,
@@ -222,7 +222,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async restoreRateLimit(snapshot: RateLimit): Promise<void> {
-    await db.update(rateLimits)
+    await getDb().update(rateLimits)
       .set({
         lastClaim: snapshot.lastClaim,
         claimCount: snapshot.claimCount,
@@ -234,7 +234,7 @@ export class DatabaseStorage implements IStorage {
   // Faucet configuration
   async getFaucetConfig(): Promise<FaucetConfig | undefined> {
     await this.ensureFaucetConfig();
-    const [config] = await db.select().from(faucetConfig).limit(1);
+    const [config] = await getDb().select().from(faucetConfig).limit(1);
     return config || undefined;
   }
 
@@ -244,7 +244,7 @@ export class DatabaseStorage implements IStorage {
       return undefined;
     }
     
-    const [updatedConfig] = await db.update(faucetConfig)
+    const [updatedConfig] = await getDb().update(faucetConfig)
       .set({
         ...config,
         updatedAt: new Date()
@@ -260,7 +260,7 @@ export class DatabaseStorage implements IStorage {
     
     try {
       // Perform atomic update with balance check in SQL
-      const [updatedConfig] = await db.update(faucetConfig)
+      const [updatedConfig] = await getDb().update(faucetConfig)
         .set({
           balance: sql`balance + CAST(${delta} AS DECIMAL)`,
           updatedAt: new Date()
@@ -280,7 +280,7 @@ export class DatabaseStorage implements IStorage {
 
   // Wallet eligibility operations
   async getWalletEligibility(walletAddress: string): Promise<WalletEligibility | undefined> {
-    const [eligibility] = await db.select().from(walletEligibility)
+    const [eligibility] = await getDb().select().from(walletEligibility)
       .where(sql`LOWER(${walletEligibility.walletAddress}) = LOWER(${walletAddress})`);
     return eligibility || undefined;
   }
@@ -290,7 +290,7 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getWalletEligibility(walletAddress);
     
     if (existing) {
-      const [updatedEligibility] = await db.update(walletEligibility)
+      const [updatedEligibility] = await getDb().update(walletEligibility)
         .set({
           isEligible: insertEligibility.isEligible ?? existing.isEligible,
           lastClaimAt: insertEligibility.lastClaimAt || existing.lastClaimAt,
@@ -301,7 +301,7 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return updatedEligibility;
     } else {
-      const [newEligibility] = await db.insert(walletEligibility).values({
+      const [newEligibility] = await getDb().insert(walletEligibility).values({
         walletAddress,
         isEligible: insertEligibility.isEligible ?? true,
         lastClaimAt: insertEligibility.lastClaimAt || null,
@@ -315,26 +315,26 @@ export class DatabaseStorage implements IStorage {
 
   // Analytics
   async getTotalClaims(): Promise<number> {
-    const [result] = await db.select({ count: sql<number>`count(*)` }).from(claims);
+    const [result] = await getDb().select({ count: sql<number>`count(*)` }).from(claims);
     return result.count;
   }
 
   async getTotalUsers(): Promise<number> {
-    const [result] = await db.select({
+    const [result] = await getDb().select({
       count: sql<number>`count(DISTINCT LOWER(${claims.walletAddress}))`
     }).from(claims);
     return result.count;
   }
 
   async getTotalDistributed(): Promise<string> {
-    const [result] = await db.select({
+    const [result] = await getDb().select({
       total: sql<string>`COALESCE(SUM(CAST(${claims.amount} AS DECIMAL)), 0)`
     }).from(claims).where(eq(claims.status, "success"));
     return parseFloat(result.total || "0").toFixed(8);
   }
 
   async getWalletTotalDistributed(walletAddress: string): Promise<string> {
-    const [result] = await db.select({
+    const [result] = await getDb().select({
       total: sql<string>`COALESCE(SUM(CAST(${claims.amount} AS DECIMAL)), 0)`
     }).from(claims)
     .where(and(
@@ -345,7 +345,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLeaderboard(limit = 10): Promise<Array<{ walletAddress: string; claims: number; totalAmount: string; lastClaim: Date; bonusClaims: number; totalBonusAmount: string }>> {
-    const results = await db.select({
+    const results = await getDb().select({
       walletAddress: sql<string>`MIN(${claims.walletAddress})`, // Use MIN to get consistent wallet address case
       claimCount: sql<number>`count(*)`,
       totalAmount: sql<string>`COALESCE(SUM(CAST(${claims.amount} AS DECIMAL)), 0)`,
@@ -362,7 +362,7 @@ export class DatabaseStorage implements IStorage {
     let bonusData: Record<string, { bonusClaims: number; totalBonusAmount: string }> = {};
     
     if (walletAddresses.length > 0) {
-      const bonusResults = await db.select({
+      const bonusResults = await getDb().select({
         walletAddress: sql<string>`MIN(${bonusClaims.walletAddress})`,
         bonusClaimCount: sql<number>`count(*)`,
         totalBonusAmount: sql<string>`COALESCE(SUM(CAST(${bonusClaims.bonusAmount} AS DECIMAL)), 0)`
@@ -396,7 +396,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClaimStats(): Promise<Array<{ date: string; claims: number; users: number }>> {
-    const results = await db.select({
+    const results = await getDb().select({
       date: sql<string>`DATE(${claims.createdAt})`,
       claimCount: sql<number>`count(*)`,
       userCount: sql<number>`count(DISTINCT LOWER(${claims.walletAddress}))`
@@ -420,7 +420,7 @@ export class DatabaseStorage implements IStorage {
     
     // Use SQL arithmetic to calculate remaining pool precisely with proper UTC reset logic
     const now = new Date();
-    const [result] = await db.select({
+    const [result] = await getDb().select({
       remaining: sql<string>`GREATEST(
         CAST(${envDailyLimitStr} AS DECIMAL) - CASE 
           WHEN date_trunc('day', ${faucetConfig.dailyResetDate} AT TIME ZONE 'UTC') < date_trunc('day', ${now} AT TIME ZONE 'UTC')
@@ -495,7 +495,7 @@ export class DatabaseStorage implements IStorage {
     const envDailyLimitStr = envDailyLimit.toString();
     
     // Use SQL to atomically check pool and calculate final amount
-    const [result] = await db.select({
+    const [result] = await getDb().select({
       remaining: sql<string>`GREATEST(CAST(${envDailyLimitStr} AS DECIMAL) - ${faucetConfig.dailyDistributed}, 0)`,
       finalAmount: sql<string>`LEAST(CAST(${claimAmount} AS DECIMAL), GREATEST(CAST(${envDailyLimitStr} AS DECIMAL) - ${faucetConfig.dailyDistributed}, 0))`
     }).from(faucetConfig).limit(1);
@@ -557,7 +557,7 @@ export class DatabaseStorage implements IStorage {
     const envDailyLimitStr = envDailyLimit.toString();
     
     // Start atomic transaction
-    return await db.transaction(async (tx) => {
+    return await getDb().transaction(async (tx) => {
       const now = new Date();
       
       // We will rely on the unique constraint to prevent duplicate pending claims when inserting
@@ -668,7 +668,7 @@ export class DatabaseStorage implements IStorage {
 
   async finalizeClaim(claimId: string, outcome: { success: boolean; txHash?: string | null }): Promise<{ success: boolean; error?: string }> {
     try {
-      return await db.transaction(async (tx) => {
+      return await getDb().transaction(async (tx) => {
         // Idempotent update: only update if status is still pending
         const [claim] = await tx.update(claims).set({
           status: outcome.success ? "success" : "failed",
@@ -739,7 +739,7 @@ export class DatabaseStorage implements IStorage {
 
   // Bonus token operations
   async createBonusClaim(insertBonusClaim: InsertBonusClaim): Promise<BonusClaim> {
-    const [bonusClaim] = await db.insert(bonusClaims).values({
+    const [bonusClaim] = await getDb().insert(bonusClaims).values({
       ...insertBonusClaim,
       status: insertBonusClaim.status || "pending"
     }).returning();
@@ -747,12 +747,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBonusClaimsByWallet(walletAddress: string): Promise<BonusClaim[]> {
-    return await db.select().from(bonusClaims)
+    return await getDb().select().from(bonusClaims)
       .where(sql`LOWER(${bonusClaims.walletAddress}) = LOWER(${walletAddress})`);
   }
 
   async updateBonusClaimStatus(id: string, status: "pending" | "success" | "failed", transactionHash?: string): Promise<BonusClaim | undefined> {
-    const [bonusClaim] = await db.update(bonusClaims).set({
+    const [bonusClaim] = await getDb().update(bonusClaims).set({
       status,
       transactionHash,
       updatedAt: new Date()
@@ -774,7 +774,7 @@ export class DatabaseStorage implements IStorage {
 
   async processBonusClaimAtomic(insertBonusClaim: InsertBonusClaim): Promise<{ success: boolean; bonusClaim?: BonusClaim; error?: string }> {
     try {
-      return await db.transaction(async (tx) => {
+      return await getDb().transaction(async (tx) => {
         // Insert bonus claim
         const [bonusClaim] = await tx.insert(bonusClaims).values(insertBonusClaim).returning();
         
@@ -794,7 +794,7 @@ export class DatabaseStorage implements IStorage {
 
   async finalizeBonusClaim(bonusClaimId: string, outcome: { success: boolean; txHash?: string | null }): Promise<{ success: boolean; error?: string }> {
     try {
-      const [bonusClaim] = await db.update(bonusClaims).set({
+      const [bonusClaim] = await getDb().update(bonusClaims).set({
         status: outcome.success ? "success" : "failed",
         transactionHash: outcome.txHash,
         updatedAt: new Date()
@@ -827,7 +827,7 @@ export class DatabaseStorage implements IStorage {
   // Bonus distribution tracking
   async getBonusDistributionStats(): Promise<BonusDistributionStats | undefined> {
     await this.ensureBonusDistributionStats();
-    const [stats] = await db.select().from(bonusDistributionStats).limit(1);
+    const [stats] = await getDb().select().from(bonusDistributionStats).limit(1);
     return stats || undefined;
   }
 
@@ -836,7 +836,7 @@ export class DatabaseStorage implements IStorage {
       await this.ensureBonusDistributionStats();
       
       const bonusFloat = parseFloat(bonusAmount);
-      await db.execute(sql`
+      await getDb().execute(sql`
         UPDATE ${bonusDistributionStats} 
         SET 
           total_bonus_distributed = total_bonus_distributed + ${bonusFloat},
@@ -862,9 +862,9 @@ export class DatabaseStorage implements IStorage {
 
   // Helper methods for bonus distribution
   private async ensureBonusDistributionStats(): Promise<void> {
-    const [existing] = await db.select().from(bonusDistributionStats).limit(1);
+    const [existing] = await getDb().select().from(bonusDistributionStats).limit(1);
     if (!existing) {
-      await db.insert(bonusDistributionStats).values({
+      await getDb().insert(bonusDistributionStats).values({
         totalBonusDistributed: "0",
         totalBonusClaims: 0,
         lastUpdated: new Date()
@@ -896,7 +896,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   private async compensateBonusDistributionStats(bonusAmount: number): Promise<void> {
-    await db.execute(sql`
+    await getDb().execute(sql`
       UPDATE ${bonusDistributionStats} 
       SET 
         total_bonus_distributed = GREATEST(total_bonus_distributed - ${bonusAmount}, 0),
