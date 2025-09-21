@@ -2,6 +2,8 @@
 
 This is a cryptocurrency faucet application for distributing FOGO tokens on the Solana/Fogo testnet blockchain. The application provides free testnet tokens to developers through a secure faucet system. It features a modern React frontend with shadcn/ui components, an Express.js backend with Drizzle ORM for database management, and comprehensive analytics and rate limiting capabilities.
 
+**Deployment Status**: Fully configured for Vercel deployment with optimized build pipeline and serverless API functions.
+
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
@@ -37,6 +39,12 @@ Preferred communication style: Simple, everyday language.
 - **Network**: Fogo testnet (Solana-based) with fallback RPC endpoints
 - **Wallet Support**: Solana address validation and transaction handling
 - **Transaction Management**: Automatic transaction confirmation and status tracking
+
+## Deployment Architecture
+- **Platform**: Vercel-compatible with serverless functions
+- **Frontend Build**: Vite build system outputting to `dist/public/`
+- **API Deployment**: Express app wrapped in Vercel serverless functions via `api/[...path].ts`
+- **Configuration**: Optimized `vercel.json` with proper routing and build commands
 
 ## Security & Rate Limiting
 - **IP-based Tracking**: Request origin monitoring for abuse prevention
