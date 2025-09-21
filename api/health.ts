@@ -1,5 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { testDatabaseConnection } from '../server/db';
+import { getDb } from '../lib/db';
+import { sql } from 'drizzle-orm';
+
+async function testDatabaseConnection(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = getDb();
+    await db.execute(sql`SELECT 1`);
+    console.log("✅ Database connection successful");
+    return { success: true };
+  } catch (error: any) {
+    console.error("❌ Database connection failed:", error.message);
+    return { success: false, error: error.message };
+  }
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Handle CORS
