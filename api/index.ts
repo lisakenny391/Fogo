@@ -511,9 +511,12 @@ app.get('/api/leaderboard', async (req, res) => {
     const formattedLeaderboard = leaderboard.map((entry, index) => ({
       rank: index + 1,
       walletAddress: entry.walletAddress,
-      totalClaimed: entry.totalAmount,
-      claimCount: entry.claims,
-      lastClaim: entry.lastClaim
+      claims: entry.claims,
+      totalAmount: entry.totalAmount,
+      lastClaim: entry.lastClaim,
+      lastClaimAgo: getTimeAgo(entry.lastClaim),
+      bonusClaims: entry.bonusClaims,
+      totalBonusAmount: entry.totalBonusAmount
     }));
     
     res.json(formattedLeaderboard);
