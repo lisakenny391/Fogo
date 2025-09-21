@@ -1,37 +1,20 @@
-// Dynamic configuration functions that read from environment variables each time
-// This allows real-time changes without application restart
+// ===== HARDCODED TESTNET CONFIG (permanent for testnet environment) =====
+// Hardcoded values for reliable Vercel deployment
 
-// Dynamic configuration getters
+// Hardcoded configuration getters for testnet
 export function getFogoToBonusRate(): number {
-  const value = process.env.FOGO_TO_BONUS;
-  if (!value) {
-    throw new Error("FOGO_TO_BONUS environment variable is required");
-  }
-  const rate = parseFloat(value);
-  if (isNaN(rate) || rate <= 0) {
-    throw new Error("FOGO_TO_BONUS must be a positive number");
-  }
-  return rate;
+  // Hardcoded for testnet: 1 FOGO = 10 bonus tokens
+  return 10.0;
 }
 
 export function getDailyPoolLimit(): number {
-  const value = process.env.DAILY_POOL_LIMIT;
-  if (!value) {
-    throw new Error("DAILY_POOL_LIMIT environment variable is required");
-  }
-  const limit = parseFloat(value);
-  if (isNaN(limit) || limit <= 0) {
-    throw new Error("DAILY_POOL_LIMIT must be a positive number");
-  }
-  return limit;
+  // Hardcoded for testnet: 300 FOGO daily limit
+  return 300.0;
 }
 
 export function getBonusTokenMint(): string {
-  const value = process.env.BONUS_TOKEN_MINT;
-  if (!value) {
-    throw new Error("BONUS_TOKEN_MINT environment variable is required");
-  }
-  return value;
+  // Hardcoded for testnet: Using FOGO contract address as bonus token mint
+  return "B7mVgAvW7i2wkcDS6WNCmNYi8FTUWBTScJk3vZ55JN4K";
 }
 
 // Tiered FOGO caps based on transaction count
