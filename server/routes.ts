@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createHash } from "crypto";
 import { web3Service } from "./web3Service.js";
 import { getFogoToBonusRate, getBonusTokenMint } from "./config.js";
+import { checkDatabaseHealth } from "../lib/db.js";
 
 // Performance optimization: In-memory cache for expensive operations
 const cache = new Map<string, { data: any; expires: number }>();
@@ -180,6 +181,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   } else {
     console.log("✅ Blockchain connection established successfully");
   }
+  // Database and connectivity health check endpoint
+  app.get("/api/health", async (req, res) => {
+    try {
+      const dbHealth = await checkDatabaseHealth();
+      const blockchainHealth = await web3Service.healthCheck();
+      
+      const isDrizzleHealthy = dbHealth.drizzle;
+      const isSupabaseHealthy = !dbHealth.supabase?.configured || dbHealth.supabase.connected;
+      const isBlockchainHealthy = blockchainHealth.isReady;
+      const isHealthy = isDrizzleHealthy && isSupabaseHealthy && isBlockchainHealthy;
+      
+      res.status(isHealthy ? 200 : 503).json({
+        status: isHealthy ? "ok" : "degraded",
+        database: {
+          drizzle: dbHealth.drizzle,
+          supabase: dbHealth.supabase || { connected: false, configured: false }
+        },
+        blockchain: {
+          connected: blockchainHealth.isReady
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Health check error:', error);
+      res.status(503).json({
+        status: "error",
+        message: "Health check failed",
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   // Faucet status endpoint - Performance optimized with caching
   app.get("/api/faucet/status", async (req, res) => {
     try {

@@ -1,5 +1,6 @@
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-serverless';
+import { sql } from 'drizzle-orm';
 import ws from 'ws';
 import * as schema from '../shared/schema.js';
 
@@ -12,11 +13,12 @@ let _db: ReturnType<typeof drizzle> | null = null;
 
 export function getDb(): ReturnType<typeof drizzle> {
   // Support both Vercel's standard variables and custom DATABASE_URL
+  // Note: SUPABASE_URL is the REST API URL, not a Postgres connection string
   const databaseUrl = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   
   if (!databaseUrl) {
     throw new Error(
-      "POSTGRES_URL or DATABASE_URL must be set. Please configure your database in Vercel's Storage tab."
+      "POSTGRES_URL or DATABASE_URL must be set. Please configure your database credentials."
     );
   }
 
@@ -26,6 +28,50 @@ export function getDb(): ReturnType<typeof drizzle> {
   }
   
   return _db!;
+}
+
+// Health check function that tests database connections
+export async function checkDatabaseHealth(): Promise<{ 
+  drizzle: boolean; 
+  supabase?: { connected: boolean; configured: boolean };
+  hasErrors: boolean;
+}> {
+  let drizzleConnected = false;
+  let supabaseResult: { connected: boolean; configured: boolean } | undefined;
+  let hasErrors = false;
+
+  // Test Drizzle connection
+  try {
+    const db = getDb();
+    await db.execute(sql`SELECT 1`);
+    drizzleConnected = true;
+  } catch (err) {
+    console.error('Drizzle connection failed:', err);
+    hasErrors = true;
+  }
+
+  // Test Supabase connection if available (lazy import to avoid breaking environments without it)
+  try {
+    const { checkSupabaseConnection } = await import('./supabase.js');
+    const result = await checkSupabaseConnection();
+    supabaseResult = {
+      connected: result.connected,
+      configured: result.configured
+    };
+    if (result.configured && !result.connected) {
+      console.error('Supabase connection failed');
+      hasErrors = true;
+    }
+  } catch (err) {
+    // Supabase not available or import failed - this is okay
+    console.log('Supabase not available:', err instanceof Error ? err.message : 'Unknown error');
+  }
+
+  return {
+    drizzle: drizzleConnected,
+    supabase: supabaseResult,
+    hasErrors
+  };
 }
 
 // For compatibility with existing code that expects a default export
