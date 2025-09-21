@@ -18,7 +18,7 @@ import {
 } from "@solana/spl-token";
 import bs58 from "bs58";
 import { createHash } from "crypto";
-import { getBonusTokenMint, getBalanceCapForTxCount, TIERED_CAPS } from "./config";
+import { getBonusTokenMint, getBalanceCapForTxCount, TIERED_CAPS } from "./config.js";
 
 export class Web3Service {
   private connection!: Connection;

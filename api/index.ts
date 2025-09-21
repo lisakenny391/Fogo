@@ -1,10 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import express from 'express';
-import { storage } from '../server/storage';
-import { insertClaimSchema } from '../shared/schema';
+import { storage } from '../server/storage.js';
+import { insertClaimSchema } from '../shared/schema.js';
 import { z } from 'zod';
-import { web3Service } from '../server/web3Service';
-import { getFogoToBonusRate, getBonusTokenMint } from '../server/config';
+import { web3Service } from '../server/web3Service.js';
+import { getFogoToBonusRate, getBonusTokenMint } from '../server/config.js';
 
 // Performance optimization: In-memory cache for expensive operations
 const cache = new Map<string, { data: any; expires: number }>();

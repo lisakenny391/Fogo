@@ -1,11 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage } from "./storage.js";
 import { insertClaimSchema, insertRateLimitSchema } from "@shared/schema";
 import { z } from "zod";
 import { createHash } from "crypto";
-import { web3Service } from "./web3Service";
-import { getFogoToBonusRate, getBonusTokenMint } from "./config";
+import { web3Service } from "./web3Service.js";
+import { getFogoToBonusRate, getBonusTokenMint } from "./config.js";
 
 // Performance optimization: In-memory cache for expensive operations
 const cache = new Map<string, { data: any; expires: number }>();

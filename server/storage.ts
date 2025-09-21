@@ -1,9 +1,9 @@
 import { type User, type InsertUser, type Claim, type InsertClaim, type FaucetConfig, type InsertFaucetConfig, type RateLimit, type InsertRateLimit, type WalletEligibility, type InsertWalletEligibility, type BonusClaim, type InsertBonusClaim, type BonusDistributionStats, type InsertBonusDistributionStats } from "@shared/schema";
 import { users, claims, faucetConfig, rateLimits, walletEligibility, bonusClaims, bonusDistributionStats } from "@shared/schema";
-import { getDb } from "../lib/db";
+import { getDb } from "../lib/db.js";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { getDailyPoolLimit, getFogoToBonusRate } from "./config";
+import { getDailyPoolLimit, getFogoToBonusRate } from "./config.js";
 
 // Storage interface for faucet operations
 export interface IStorage {
