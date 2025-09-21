@@ -3,15 +3,11 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist/public",
   "functions": {
-    "api/index.ts": {
+    "api/[...path].ts": {
       "maxDuration": 30
     }
   },
   "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/index"
-    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
