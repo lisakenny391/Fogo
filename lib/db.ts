@@ -11,14 +11,17 @@ let _pool: Pool | null = null;
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export function getDb(): ReturnType<typeof drizzle> {
-  if (!process.env.DATABASE_URL) {
+  // Support both Vercel's standard variables and custom DATABASE_URL
+  const databaseUrl = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  
+  if (!databaseUrl) {
     throw new Error(
-      "DATABASE_URL must be set. Did you forget to provision a database?"
+      "POSTGRES_URL or DATABASE_URL must be set. Please configure your database in Vercel's Storage tab."
     );
   }
 
   if (!_db) {
-    _pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    _pool = new Pool({ connectionString: databaseUrl });
     _db = drizzle({ client: _pool, schema });
   }
   
